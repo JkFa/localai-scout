@@ -433,3 +433,28 @@ def test_bpw_above_32_kept_above_40_null():
     assert qs["F32"]["bpw"] == 32.8
     assert qs["Q8_0"]["bpw"] is None and qs["Q8_0"]["bpw_source"] is None
     assert len(warnings) == 1 and "x-Q8_0" in warnings[0]
+
+
+# ---------------------------------------------------------------- arquitetura (model_type)
+
+
+def test_architecture_from_model_type_and_text_config():
+    cfg = j("config_dense.json")
+    cfg["model_type"] = "testarch"
+    assert C.map_config(cfg)["architecture"] == "testarch"
+    vlm = j("config_vlm.json")
+    vlm["model_type"] = "test_vlm"
+    vlm["text_config"]["model_type"] = "test_text"
+    assert C.map_config(vlm)["architecture"] == "test_text"
+
+
+def test_missing_architecture_is_null_but_not_incomplete():
+    e = complete_entry()
+    assert e["architecture"] is None
+    assert e["complete"] is True and "architecture" not in e["incomplete_fields"]
+    assert schema_errors(as_catalog(e)) == []
+    assert C.check_catalog(as_catalog(e), TODAY) == ([], [])
+    cfg = j("config_dense.json")
+    cfg["model_type"] = "testarch"
+    e2 = C.build_entry("test/dense-2b", j("info_dense.json"), cfg, j("gguf_dense.json"), POLICY, TODAY)
+    assert e2["architecture"] == "testarch" and schema_errors(as_catalog(e2)) == []

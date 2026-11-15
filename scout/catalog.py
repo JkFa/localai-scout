@@ -65,6 +65,7 @@ def map_config(config: dict | None) -> dict:
     is_moe, moe_inactive_params, null_reasons {campo: motivo}.
     """
     out: dict[str, Any] = {f: None for f in ARCH_FIELDS}
+    out["architecture"] = None
     out.update(is_moe=False, moe_inactive_params=None, null_reasons={})
     reasons: dict[str, str] = out["null_reasons"]
     if config is None:
@@ -100,6 +101,9 @@ def map_config(config: dict | None) -> dict:
             reasons["head_dim"] = f"{src}head_dim ausente e sem hidden_size/num_attention_heads"
 
     out["kv_model"] = "mla" if c.get("kv_lora_rank") is not None else "standard"
+    # Arquitetura: dado de API, não estrutural; ausente -> None sem tornar o modelo incompleto.
+    mt = c.get("model_type")
+    out["architecture"] = mt.strip() if isinstance(mt, str) and mt.strip() else None
 
     key_names = {"n_layers": "num_hidden_layers", "n_heads": "num_attention_heads",
                  "ctx_max": "max_position_embeddings", "n_kv_heads": "num_key_value_heads"}
@@ -321,6 +325,7 @@ def build_entry_with_reasons(repo: str, info: dict, config: dict | None, gguf_in
         "params_total": params_total,
         "params_active": params_active,
         **{f: arch[f] for f in ARCH_FIELDS},
+        "architecture": arch["architecture"],
         "quants": quants,
         "verified_at": today,
     }

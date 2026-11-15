@@ -55,6 +55,7 @@
         "n_kv_heads": {"type": ["integer", "null"], "minimum": 1},
         "head_dim": {"type": ["integer", "null"], "minimum": 1},
         "ctx_max": {"type": ["integer", "null"], "minimum": 1},
+        "architecture": {"type": ["string", "null"], "minLength": 1, "description": "model_type do config.json (VLM: text_config.model_type). Opcional; null não torna o modelo incompleto. Usado para casar com a calibração do scout bench (comparação normalizada)."},
         "kv_model": {"enum": ["standard", "mla", null], "description": "standard = MHA/GQA (fórmula de KV vale); mla = atenção latente (rejeitado em M1)."},
         "quants": {"type": "array", "items": {"$ref": "#/$defs/quant"}},
         "verified_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Data UTC da última leitura das APIs."},

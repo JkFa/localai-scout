@@ -2,6 +2,7 @@
   "kind": "catalog",
   "models": [
     {
+      "architecture": "llama",
       "commercial_ok": true,
       "complete": false,
       "ctx_max": 16384,
@@ -27,6 +28,7 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "qwen2",
       "commercial_ok": true,
       "complete": true,
       "ctx_max": 32768,
@@ -124,6 +126,7 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "qwen3_moe",
       "commercial_ok": true,
       "complete": true,
       "ctx_max": 40960,
@@ -188,6 +191,7 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "qwen3",
       "commercial_ok": true,
       "complete": true,
       "ctx_max": 40960,
@@ -252,6 +256,7 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "qwen3",
       "commercial_ok": true,
       "complete": true,
       "ctx_max": 40960,
@@ -316,6 +321,7 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "nomic_bert",
       "commercial_ok": true,
       "complete": true,
       "ctx_max": 2048,
@@ -452,6 +458,7 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "whisper",
       "commercial_ok": true,
       "complete": false,
       "ctx_max": null,
