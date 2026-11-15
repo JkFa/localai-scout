@@ -161,6 +161,7 @@ function init() {
   $("btn-demo").addEventListener("click", () => loadFixture("demo-feasibility.json"));
   $("btn-demo2").addEventListener("click", () => loadFixture("demo-feasibility-rejeitados.json"));
   $("btn-demo4").addEventListener("click", () => loadFixture("demo-feasibility-falta.json"));
+  $("btn-demo5").addEventListener("click", () => loadFixture("demo-feasibility-nota.json"));
   $("btn-demo3").addEventListener("click", () => loadFixture("demo-system.json"));
   $("btn-live").addEventListener("click", () => live(false));
   $("btn-refresh").addEventListener("click", () => live(true));
