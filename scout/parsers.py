@@ -363,25 +363,25 @@ def ram_bandwidth(mts: int | None, channels: int | None, mem_type: str | None,
     return None, f"none: {why}", "low", None
 
 
-def hybrid_by_freq(rows: list[tuple[int, int, float | None]]) -> tuple[str, tuple[int, int] | None]:
-    """`lscpu -p=CPU,CORE,MAXMHZ` sem sysfs. -> ("hybrid", (perf, eff)) | ("uniform", None) | ("unknown", None).
+def hybrid_by_freq(rows: list[tuple[int, int, float | None]]) -> tuple[str, tuple[int, int] | None, float | None]:
+    """`lscpu -p=CPU,CORE,MAXMHZ` sem sysfs. -> ("hybrid", (perf, eff), separação %) | ("uniform", None, None) | ("unknown", None, None).
     Dois grupos de MAXMHZ separados por >15%: o de maior frequência é o de performance."""
     per_core: dict[int, float] = {}
     for _cpu, core, mhz in rows:
         if mhz is None or mhz <= 0:
-            return "unknown", None
+            return "unknown", None, None
         per_core[core] = max(per_core.get(core, 0.0), mhz)
     if not per_core:
-        return "unknown", None
+        return "unknown", None, None
     hi = max(per_core.values())
     fast = [c for c, v in per_core.items() if v >= 0.85 * hi]
     slow = [c for c in per_core if c not in fast]
     if not slow:
-        return "uniform", None
+        return "uniform", None, None
     slow_hi = max(per_core[c] for c in slow)
     if any(per_core[c] < 0.85 * slow_hi for c in slow):
-        return "unknown", None  # mais de dois grupos
-    return "hybrid", (len(fast), len(slow))
+        return "unknown", None, None  # mais de dois grupos
+    return "hybrid", (len(fast), len(slow)), round((1 - slow_hi / hi) * 100, 1)
 
 
 def parse_lscpu_p_mhz(text: str) -> list[tuple[int, int, float | None]]:

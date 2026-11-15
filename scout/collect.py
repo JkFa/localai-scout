@@ -180,25 +180,27 @@ def collect_cpu_linux(probes: Probes) -> dict:
             if hybrid:
                 perf, eff = hybrid
                 cpu["cores_physical"] = field(perf + eff, "sysfs:cpu_core+cpu_atom", "high")
-                cpu["cores_performance"] = field(perf, "sysfs:cpu_core", "high", "E-cores fora de n_threads")
-                cpu["cores_efficiency"] = field(eff, "sysfs:cpu_atom", "high")
+                cpu["cores_performance"] = field(perf, "sysfs:cpu_core/cpu_atom", "high", "E-cores fora de n_threads")
+                cpu["cores_efficiency"] = field(eff, "sysfs:cpu_core/cpu_atom", "high")
             else:
                 cpu["cores_performance"] = missing("CPU híbrida detectada, mas lscpu -p falhou")
                 cpu["cores_efficiency"] = missing("CPU híbrida detectada, mas lscpu -p falhou")
         else:  # sem sysfs: nunca high
             lp = run_cmd(["lscpu", "-p=CPU,CORE,MAXMHZ"], probes, probe="lscpu-p-mhz")
-            kind, split = P.hybrid_by_freq(P.parse_lscpu_p_mhz(lp)) if lp else ("unknown", None)
+            kind, split, sep = P.hybrid_by_freq(P.parse_lscpu_p_mhz(lp)) if lp else ("unknown", None, None)
             intel = "intel" in (info.get("vendor") or "").lower()
             if kind == "hybrid" and split:
                 perf, eff = split
-                cpu["cores_physical"] = field(perf + eff, "lscpu:maxmhz", "medium")
-                cpu["cores_performance"] = field(perf, "lscpu:maxmhz", "medium",
+                method = f"lscpu:maxmhz_grouping (separação {sep:g}%)"
+                cpu["cores_physical"] = field(perf + eff, method, "medium")
+                cpu["cores_performance"] = field(perf, method, "medium",
                                                  "grupo de maior MAXMHZ; E-cores fora de n_threads")
-                cpu["cores_efficiency"] = field(eff, "lscpu:maxmhz", "medium")
+                cpu["cores_efficiency"] = field(eff, method, "medium")
             elif kind == "unknown" and intel:
-                cpu["cores_performance"] = field(physical, "derived:cores_physical", "low",
-                                                 "hybrid_undetermined: sem sysfs e sem MAXMHZ conclusivo")
-                cpu["cores_efficiency"] = missing("hybrid_undetermined: sem sysfs e sem MAXMHZ conclusivo")
+                cpu["cores_performance"] = field(physical, "undetermined", "low",
+                                                 "hybrid_undetermined: sem sysfs e sem MAXMHZ conclusivo; valor = núcleos físicos")
+                cpu["cores_efficiency"] = field(None, "undetermined", "low",
+                                                "hybrid_undetermined: sem sysfs e sem MAXMHZ conclusivo")
             else:
                 src = "lscpu:maxmhz" if kind == "uniform" else "derived:cpu_not_hybrid"
                 cpu["cores_performance"] = field(physical, "derived:cores_physical", "medium", "CPU não híbrida")

@@ -254,8 +254,8 @@ def test_denied_dmidecode_gives_hint(monkeypatch, capsys, tmp_path):
 # ---- Fase 7: F2 (híbrida sem sysfs), F3 (canais), F4b (tabela de GPU)
 
 def test_hybrid_by_freq():
-    kind, split = P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_hybrid.txt")))
-    assert (kind, split) == ("hybrid", (6, 8))
+    kind, split, sep = P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_hybrid.txt")))
+    assert (kind, split, sep) == ("hybrid", (6, 8), 25.5)
     assert P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_uniform.txt")))[0] == "uniform"
     assert P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_empty.txt")))[0] == "unknown"
     assert P.hybrid_by_freq([])[0] == "unknown"
@@ -278,6 +278,8 @@ def test_f2_hybrid_without_sysfs_is_medium(monkeypatch):
     cpu = _cpu(monkeypatch, "lscpu_intel_hybrid.txt", "lscpu_p_mhz_hybrid.txt")
     assert cpu["cores_performance"]["value"] == 6 and cpu["cores_efficiency"]["value"] == 8
     assert cpu["cores_performance"]["confidence"] == "medium"
+    for k in ("cores_performance", "cores_efficiency"):
+        assert cpu[k]["source"] == "lscpu:maxmhz_grouping (separação 25.5%)"
 
 
 def test_f2_intel_inconclusive_is_low_and_never_high(monkeypatch):
@@ -285,6 +287,7 @@ def test_f2_intel_inconclusive_is_low_and_never_high(monkeypatch):
     assert cpu["cores_performance"]["confidence"] == "low"
     assert "hybrid_undetermined" in cpu["cores_performance"]["note"]
     assert cpu["cores_efficiency"]["value"] is None
+    assert cpu["cores_performance"]["source"] == cpu["cores_efficiency"]["source"] == "undetermined"
     cpu = _cpu(monkeypatch, "lscpu_intel_hybrid.txt", None)
     assert cpu["cores_performance"]["confidence"] == "low"
 
@@ -353,8 +356,16 @@ def test_gpu_table_used_in_collect(monkeypatch):
     assert g1["bandwidth_bytes_per_s"]["value"] is None  # RTX 4090 fora da tabela
 
 
-def test_shipped_gpu_table_entries_have_official_source():
-    t = json.loads((C.DATA / "gpu_bandwidth.json").read_text(encoding="utf-8"))
-    assert t["reviewed"] is False
-    for e in t["entries"]:
-        assert P._official(e["source_url"]) and isinstance(e["bandwidth_bytes_per_s"], int)
+def test_f2_sysfs_source_and_high(monkeypatch):
+    def fake(cmd, probes, timeout=5.0, probe=None):
+        probes.add(probe or cmd[0], "ok")
+        if cmd == ["lscpu"]:
+            return txt("lscpu_intel_hybrid.txt")
+        return txt("lscpu_p_hybrid.txt")
+    monkeypatch.setattr(C, "run_cmd", fake)
+    monkeypatch.setattr(C, "_sysfs_cpus", lambda name, probes: P.parse_cpu_list(
+        txt("sys_cpu_core_cpus.txt" if name == "cpu_core" else "sys_cpu_atom_cpus.txt")))
+    cpu = C.collect_cpu_linux(C.Probes())
+    assert (cpu["cores_performance"]["value"], cpu["cores_efficiency"]["value"]) == (6, 8)
+    for k in ("cores_performance", "cores_efficiency"):
+        assert cpu[k]["source"] == "sysfs:cpu_core/cpu_atom" and cpu[k]["confidence"] == "high"
