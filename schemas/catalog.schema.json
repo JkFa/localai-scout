@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/localai-scout/schemas/catalog.schema.json",
+  "title": "LocalAI Scout — catalog.json",
+  "description": "Gerado só por `scout catalog add` a partir das APIs do Hugging Face. Todo campo de modelo é OBRIGATÓRIO como chave, mas pode ser null quando a API não devolveu. Coerência de `complete`: o schema garante complete:true => nenhum campo obrigatório null e ao menos uma quant; complete:false => incomplete_fields não vazio. A coerência inversa (incomplete_fields lista exatamente os campos null) é verificada em código por `scout catalog check` e pelos testes.",
+  "type": "object",
+  "required": ["schema_version", "kind", "models"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "catalog"},
+    "fixture": {
+      "type": "object",
+      "required": ["synthetic", "description"],
+      "additionalProperties": false,
+      "properties": {"synthetic": {"const": true}, "description": {"type": "string"}}
+    },
+    "models": {"type": "array", "items": {"$ref": "#/$defs/model"}}
+  },
+  "$defs": {
+    "https_url": {"type": "string", "pattern": "^https://[^\\s]+$"},
+    "task": {"enum": ["chat", "code", "embeddings", "vlm", "stt", "diffusion"]},
+    "quant": {
+      "type": "object",
+      "required": ["format", "name", "bpw", "bpw_source", "file_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "format": {"enum": ["GGUF", "EXL2", "AWQ", "GPTQ"]},
+        "name": {"type": "string", "minLength": 1, "description": "Q4_K_M, Q8_0, 4.0bpw..."},
+        "bpw": {"type": ["number", "null"], "exclusiveMinimum": 0, "maximum": 32, "description": "Bits por peso efetivo. Calculado: file_bytes*8/params_total. null => quant ignorada pelo solver (bpw_unknown)."},
+        "bpw_source": {"enum": ["file_bytes", "table", "nominal", null], "description": "file_bytes = calculado do arquivo; table = data/quant_bpw.json; nominal = declarado no nome (EXL2)."},
+        "file_bytes": {"type": ["integer", "null"], "minimum": 1, "description": "Soma de todos os shards. null => solver usa fallback params*bpw/8*k_ovh e confidence low. Não torna o modelo incompleto."},
+        "file_url": {"anyOf": [{"$ref": "#/$defs/https_url"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {"if": {"properties": {"bpw": {"type": "null"}}, "required": ["bpw"]}, "then": {"properties": {"bpw_source": {"const": null}}}, "else": {"properties": {"bpw_source": {"type": "string"}}}}
+      ]
+    },
+    "model": {
+      "type": "object",
+      "required": ["id", "source_url", "gguf_repo", "license", "license_source", "commercial_ok", "tasks", "params_total", "params_active", "n_layers", "n_heads", "n_kv_heads", "head_dim", "ctx_max", "kv_model", "quants", "verified_at", "complete", "incomplete_fields"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$", "description": "repo HF <org>/<nome>."},
+        "source_url": {"$ref": "#/$defs/https_url", "description": "Nunca null (regra 2): sem URL o modelo não entra no catálogo."},
+        "gguf_repo": {"type": ["string", "null"]},
+        "license": {"type": ["string", "null"], "minLength": 1, "description": "cardData.license literal da API."},
+        "license_source": {"anyOf": [{"$ref": "#/$defs/https_url"}, {"type": "null"}]},
+        "commercial_ok": {"type": ["boolean", "null"], "description": "Derivado de `license` por tabela revisada por humano. null = licença fora da tabela: bloqueado sob --commercial, mas não torna o modelo incompleto (ver DECISIONS.md, pergunta em aberto)."},
+        "tasks": {"type": ["array", "null"], "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/task"}},
+        "params_total": {"type": ["integer", "null"], "minimum": 1},
+        "params_active": {"type": ["integer", "null"], "minimum": 1, "description": "Denso: igual a params_total. MoE: < params_total."},
+        "n_layers": {"type": ["integer", "null"], "minimum": 1},
+        "n_heads": {"type": ["integer", "null"], "minimum": 1},
+        "n_kv_heads": {"type": ["integer", "null"], "minimum": 1},
+        "head_dim": {"type": ["integer", "null"], "minimum": 1},
+        "ctx_max": {"type": ["integer", "null"], "minimum": 1},
+        "kv_model": {"enum": ["standard", "mla", null], "description": "standard = MHA/GQA (fórmula de KV vale); mla = atenção latente (rejeitado em M1)."},
+        "quants": {"type": "array", "items": {"$ref": "#/$defs/quant"}},
+        "verified_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Data UTC da última leitura das APIs."},
+        "complete": {"type": "boolean"},
+        "incomplete_fields": {"type": "array", "uniqueItems": true, "items": {"enum": ["license", "license_source", "tasks", "params_total", "params_active", "n_layers", "n_heads", "n_kv_heads", "head_dim", "ctx_max", "kv_model", "quants"]}, "description": "Por que complete é false. 'quants' = nenhuma quant."}
+      },
+      "if": {"properties": {"complete": {"const": true}}, "required": ["complete"]},
+      "then": {
+        "properties": {
+          "license": {"type": "string"},
+          "license_source": {"type": "string"},
+          "tasks": {"type": "array"},
+          "params_total": {"type": "integer"},
+          "params_active": {"type": "integer"},
+          "n_layers": {"type": "integer"},
+          "n_heads": {"type": "integer"},
+          "n_kv_heads": {"type": "integer"},
+          "head_dim": {"type": "integer"},
+          "ctx_max": {"type": "integer"},
+          "kv_model": {"type": "string"},
+          "quants": {"minItems": 1},
+          "incomplete_fields": {"maxItems": 0}
+        }
+      },
+      "else": {"properties": {"incomplete_fields": {"minItems": 1}}}
+    }
+  }
+}

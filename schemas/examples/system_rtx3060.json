@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "kind": "system",
+  "scout_version": "0.1.0",
+  "collected_at": "2026-11-15T12:00:00Z",
+  "platform": "linux",
+  "fixture": {
+    "synthetic": true,
+    "description": "Perfil 2 de PROMPT.md (desktop 16 GB DDR4 dual-channel + GPU NVIDIA 12 GB). Valores SINTÉTICOS para exemplo de contrato; nenhum é medição real."
+  },
+  "os": {
+    "name": {
+      "value": "Ubuntu",
+      "source": "/etc/os-release:NAME",
+      "confidence": "high"
+    },
+    "version": {
+      "value": "24.04",
+      "source": "/etc/os-release:VERSION_ID",
+      "confidence": "high"
+    },
+    "kernel": {
+      "value": "6.8.0-fixture",
+      "source": "platform.release",
+      "confidence": "high"
+    },
+    "arch": {
+      "value": "x86_64",
+      "source": "platform.machine",
+      "confidence": "high"
+    }
+  },
+  "cpu": {
+    "model": {
+      "value": "FIXTURE CPU 6C/12T",
+      "source": "lscpu",
+      "confidence": "high"
+    },
+    "vendor": {
+      "value": "GenuineIntel",
+      "source": "lscpu",
+      "confidence": "high"
+    },
+    "cores_logical": {
+      "value": 12,
+      "source": "lscpu",
+      "confidence": "high"
+    },
+    "cores_physical": {
+      "value": 6,
+      "source": "lscpu",
+      "confidence": "high"
+    },
+    "cores_performance": {
+      "value": 6,
+      "source": "derived:cores_physical",
+      "confidence": "high",
+      "note": "CPU não híbrida"
+    },
+    "cores_efficiency": {
+      "value": 0,
+      "source": "derived:cpu_not_hybrid",
+      "confidence": "medium"
+    },
+    "isa": {
+      "avx2": {
+        "value": true,
+        "source": "lscpu:flags",
+        "confidence": "high"
+      },
+      "avx512": {
+        "value": false,
+        "source": "lscpu:flags",
+        "confidence": "high"
+      },
+      "amx": {
+        "value": false,
+        "source": "lscpu:flags",
+        "confidence": "high"
+      },
+      "neon": {
+        "value": false,
+        "source": "platform.machine",
+        "confidence": "high"
+      },
+      "sve": {
+        "value": false,
+        "source": "platform.machine",
+        "confidence": "high"
+      }
+    }
+  },
+  "memory": {
+    "ram_total_bytes": {
+      "value": 17179869184,
+      "source": "/proc/meminfo:MemTotal",
+      "confidence": "high"
+    },
+    "type": {
+      "value": "DDR4",
+      "source": "dmidecode",
+      "confidence": "medium"
+    },
+    "speed_mts": {
+      "value": 3200,
+      "source": "dmidecode",
+      "confidence": "medium"
+    },
+    "channels": {
+      "value": 2,
+      "source": "dmidecode",
+      "confidence": "medium"
+    },
+    "bandwidth_bytes_per_s": {
+      "value": 51200000000,
+      "source": "estimate:mts*channels*8",
+      "confidence": "medium",
+      "note": "3200 MT/s * 2 canais * 8 bytes"
+    },
+    "unified": {
+      "value": false,
+      "source": "derived:platform",
+      "confidence": "high"
+    },
+    "swap_total_bytes": {
+      "value": 2147483648,
+      "source": "/proc/meminfo:SwapTotal",
+      "confidence": "high"
+    }
+  },
+  "gpus": {
+    "value": [
+      {
+        "index": 0,
+        "vendor": {
+          "value": "nvidia",
+          "source": "nvidia-smi",
+          "confidence": "high"
+        },
+        "name": {
+          "value": "FIXTURE NVIDIA 12GB (perfil 2)",
+          "source": "nvidia-smi",
+          "confidence": "high"
+        },
+        "vram_total_bytes": {
+          "value": 12884901888,
+          "source": "nvidia-smi:memory.total",
+          "confidence": "high"
+        },
+        "vram_free_bytes": {
+          "value": 12400000000,
+          "source": "nvidia-smi:memory.free",
+          "confidence": "high"
+        },
+        "bandwidth_bytes_per_s": {
+          "value": 300000000000,
+          "source": "fixture",
+          "confidence": "medium",
+          "note": "valor sintético redondo, não é especificação de produto"
+        },
+        "driver_version": {
+          "value": "000.00-fixture",
+          "source": "nvidia-smi:driver_version",
+          "confidence": "high"
+        },
+        "compute_capability": {
+          "value": null,
+          "source": "nvidia-smi:compute_cap",
+          "confidence": "low",
+          "note": "sintético: deixado null para exercitar o caminho de campo ausente"
+        },
+        "backend": {
+          "value": "cuda",
+          "source": "derived:vendor",
+          "confidence": "high"
+        },
+        "bf16": {
+          "value": null,
+          "source": "derived:compute_capability",
+          "confidence": "low"
+        },
+        "fp8": {
+          "value": null,
+          "source": "derived:compute_capability",
+          "confidence": "low"
+        },
+        "flash_attention": {
+          "value": null,
+          "source": "derived:compute_capability",
+          "confidence": "low"
+        }
+      }
+    ],
+    "source": "nvidia-smi",
+    "confidence": "high"
+  },
+  "disks": {
+    "value": [
+      {
+        "mount": "/",
+        "kind": {
+          "value": "nvme",
+          "source": "lsblk:rota+tran",
+          "confidence": "medium"
+        },
+        "total_bytes": {
+          "value": 500000000000,
+          "source": "os.statvfs",
+          "confidence": "high"
+        },
+        "free_bytes": {
+          "value": 200000000000,
+          "source": "os.statvfs",
+          "confidence": "high"
+        }
+      }
+    ],
+    "source": "os.statvfs+lsblk",
+    "confidence": "high"
+  },
+  "power": {
+    "has_battery": {
+      "value": false,
+      "source": "/sys/class/power_supply",
+      "confidence": "high"
+    },
+    "on_battery": {
+      "value": false,
+      "source": "/sys/class/power_supply",
+      "confidence": "high"
+    }
+  },
+  "runtimes": {
+    "ollama": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_cli": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_server": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_bench": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "lm_studio": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "comfyui": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "ollama_models": {
+      "value": null,
+      "source": "ollama list",
+      "confidence": "low",
+      "note": "ollama ausente do PATH"
+    }
+  },
+  "probes": [
+    {
+      "probe": "lscpu",
+      "status": "ok",
+      "message": ""
+    },
+    {
+      "probe": "dmidecode",
+      "status": "ok",
+      "message": "fixture"
+    },
+    {
+      "probe": "nvidia-smi",
+      "status": "ok",
+      "message": ""
+    },
+    {
+      "probe": "rocm-smi",
+      "status": "not_found",
+      "message": "rocm-smi não está no PATH"
+    },
+    {
+      "probe": "ollama",
+      "status": "not_found",
+      "message": "ollama não está no PATH"
+    }
+  ]
+}

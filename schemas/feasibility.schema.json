@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/localai-scout/schemas/feasibility.schema.json",
+  "title": "LocalAI Scout — feasibility.json",
+  "description": "Saída de `scout plan --json` e de POST /plan. Autocontida: embute o system usado, a intenção, as constantes de tuning e o recorte do catálogo de cada modelo citado, para que o frontend (modo ARQUIVO) só RENDERIZE, sem aritmética. Determinística: sem timestamps nem nada que varie entre duas execuções sobre a mesma entrada. Bytes e tokens são inteiros; tokens/s e segundos são number (estimativas).",
+  "type": "object",
+  "required": ["schema_version", "kind", "scout_version", "inputs", "pools", "candidates", "rejected", "excluded", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "feasibility"},
+    "scout_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"},
+    "fixture": {
+      "type": "object",
+      "required": ["synthetic", "description"],
+      "additionalProperties": false,
+      "properties": {"synthetic": {"const": true}, "description": {"type": "string"}}
+    },
+    "inputs": {
+      "type": "object",
+      "required": ["intent", "system", "catalog", "tuning"],
+      "additionalProperties": false,
+      "properties": {
+        "intent": {"$ref": "#/$defs/intent"},
+        "system": {"$ref": "system.schema.json"},
+        "catalog": {
+          "type": "object",
+          "required": ["sha256", "model_count", "oldest_verified_at"],
+          "additionalProperties": false,
+          "description": "Identifica o catálogo usado. sha256 dos bytes exatos do arquivo lido.",
+          "properties": {
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "model_count": {"type": "integer", "minimum": 0},
+            "oldest_verified_at": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+          }
+        },
+        "tuning": {
+          "type": "object",
+          "required": ["eta_gpu", "eta_cpu", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "eta_gpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
+            "eta_cpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
+            "source": {"enum": ["default", "calibrated"], "description": "calibrated = ajustado por `scout bench --run` nesta máquina."}
+          }
+        }
+      }
+    },
+    "pools": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Orçamentos. gpu+cpu, ou só cpu, ou só unified.",
+      "items": {"$ref": "#/$defs/pool"}
+    },
+    "candidates": {
+      "type": "array",
+      "description": "Já ordenados por (tier, tokens_per_s desc). Nunca contém tier inviavel. Ordem é a do solver; o frontend não reordena por conta própria.",
+      "items": {"$ref": "#/$defs/candidate"}
+    },
+    "rejected": {"type": "array", "items": {"$ref": "#/$defs/rejected"}},
+    "excluded": {
+      "type": "object",
+      "description": "Pulados em silêncio pelo algoritmo (sem motivo por item). Só contagens, para transparência.",
+      "required": ["incomplete", "task_mismatch"],
+      "additionalProperties": false,
+      "properties": {
+        "incomplete": {"type": "integer", "minimum": 0},
+        "task_mismatch": {"type": "integer", "minimum": 0}
+      }
+    },
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}}
+  },
+  "$defs": {
+    "task": {"enum": ["chat", "code", "embeddings", "vlm", "stt", "diffusion"]},
+    "tier": {"enum": ["confortavel", "limite", "inviavel"]},
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "placement": {"enum": ["gpu_full", "hybrid", "cpu_only"]},
+    "pool_id": {"enum": ["gpu", "cpu", "unified"]},
+    "provenance_value": {
+      "enum": ["catalog", "measured", "calculated", "estimated"],
+      "description": "catalog = copiado do catálogo; measured = detectado no hardware ou medido por bench; calculated = fórmula determinística da spec sobre entradas catalog/measured de confiança high/medium; estimated = depende de constante empírica (eta, k_ovh, tabela de bpw/banda) ou de entrada com confidence low. Regra: proveniência de um derivado = a pior entre as entradas."
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Mapa nome-do-campo-numérico -> proveniência. Todo número exibível do objeto tem entrada aqui.",
+      "additionalProperties": {"$ref": "#/$defs/provenance_value"}
+    },
+    "intent": {
+      "type": "object",
+      "required": ["tasks", "ctx", "commercial_use", "batch", "kv_quant"],
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/task"}},
+        "ctx": {"type": "integer", "minimum": 1, "description": "tokens"},
+        "commercial_use": {"type": "boolean"},
+        "batch": {"type": "integer", "minimum": 1},
+        "kv_quant": {"enum": ["f16", "q8_0", "q4_0"]}
+      }
+    },
+    "pool": {
+      "type": "object",
+      "required": ["id", "gpu_index", "total_bytes", "reserved_bytes", "usable_bytes", "bandwidth_bytes_per_s", "eta", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/pool_id"},
+        "gpu_index": {"type": ["integer", "null"], "minimum": 0, "description": "Índice em system.gpus.value; null para cpu/unified."},
+        "total_bytes": {"type": "integer", "minimum": 0},
+        "reserved_bytes": {"type": "integer", "minimum": 0, "description": "gpu: vram_display + 600_000_000; cpu: 3_000_000_000."},
+        "usable_bytes": {"type": "integer", "minimum": 0, "description": "Orçamento. Truncado em 0 com aviso se a fórmula der negativo."},
+        "bandwidth_bytes_per_s": {"type": ["integer", "null"], "minimum": 1},
+        "eta": {"type": "number", "minimum": 0.3, "maximum": 1.0},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "pool_usage": {
+      "type": "object",
+      "required": ["pool", "weights_bytes", "kv_bytes", "buffer_bytes", "total_bytes", "budget_bytes", "tier"],
+      "additionalProperties": false,
+      "properties": {
+        "pool": {"$ref": "#/$defs/pool_id"},
+        "weights_bytes": {"type": "integer", "minimum": 0},
+        "kv_bytes": {"type": "integer", "minimum": 0},
+        "buffer_bytes": {"type": "integer", "minimum": 0},
+        "total_bytes": {"type": "integer", "minimum": 0},
+        "budget_bytes": {"type": "integer", "minimum": 0},
+        "tier": {"$ref": "#/$defs/tier"}
+      }
+    },
+    "model_ref": {
+      "type": "object",
+      "description": "Recorte do catálogo necessário para exibir o modelo sem o catálogo inteiro.",
+      "required": ["id", "source_url", "license", "license_source", "commercial_ok", "tasks", "params_total", "params_active", "n_layers"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 3},
+        "source_url": {"type": "string", "pattern": "^https://"},
+        "license": {"type": ["string", "null"]},
+        "license_source": {"type": ["string", "null"], "pattern": "^https://"},
+        "commercial_ok": {"type": ["boolean", "null"]},
+        "tasks": {"type": ["array", "null"], "items": {"$ref": "#/$defs/task"}},
+        "params_total": {"type": ["integer", "null"], "minimum": 1},
+        "params_active": {"type": ["integer", "null"], "minimum": 1},
+        "n_layers": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "quant_ref": {
+      "type": "object",
+      "required": ["format", "name", "bpw", "file_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "format": {"enum": ["GGUF", "EXL2", "AWQ", "GPTQ"]},
+        "name": {"type": "string", "minLength": 1},
+        "bpw": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "file_bytes": {"type": ["integer", "null"], "minimum": 1, "description": "Tamanho do download."}
+      }
+    },
+    "skipped_quant": {
+      "type": "object",
+      "required": ["format", "name", "reason_code"],
+      "additionalProperties": false,
+      "properties": {
+        "format": {"enum": ["GGUF", "EXL2", "AWQ", "GPTQ"]},
+        "name": {"type": "string"},
+        "reason_code": {"enum": ["below_quality_floor", "bpw_unknown", "does_not_fit", "format_requires_full_gpu", "no_gpu_for_format"]}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["model", "quant", "placement", "n_gpu_layers", "n_threads", "weights_bytes", "kv_bytes", "buffer_bytes", "total_bytes", "by_pool", "tier", "tokens_per_s_est", "ttft_s_est", "confidence", "confidence_reasons", "blocked", "blocked_reason", "primary_for", "skipped_quants", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {"$ref": "#/$defs/model_ref"},
+        "quant": {"$ref": "#/$defs/quant_ref"},
+        "placement": {"$ref": "#/$defs/placement"},
+        "n_gpu_layers": {"type": "integer", "minimum": 0, "description": "gpu_full = n_layers; cpu_only = 0; hybrid = 1..n_layers-1."},
+        "n_threads": {"type": ["integer", "null"], "minimum": 1, "description": "De cpu.cores_performance; nunca de núcleos lógicos."},
+        "weights_bytes": {"type": "integer", "minimum": 1},
+        "kv_bytes": {"type": "integer", "minimum": 0},
+        "buffer_bytes": {"type": "integer", "minimum": 0},
+        "total_bytes": {"type": "integer", "minimum": 1, "description": "weights + kv + buffer (soma de todos os pools)."},
+        "by_pool": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"$ref": "#/$defs/pool_usage"}},
+        "tier": {"enum": ["confortavel", "limite"], "description": "Pior tier entre by_pool. inviavel nunca é candidato."},
+        "tokens_per_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null se faltar banda do pool."},
+        "ttft_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null enquanto a fórmula de prefill não for especificada (DECISIONS.md)."},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified"]}},
+        "blocked": {"type": "boolean"},
+        "blocked_reason": {"enum": ["non_commercial", "license_unknown", null]},
+        "primary_for": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/task"}, "description": "Tarefas para as quais este é a recomendação principal, decidido pelo solver. Candidato blocked tem sempre []."},
+        "skipped_quants": {"type": "array", "items": {"$ref": "#/$defs/skipped_quant"}, "description": "Quants de bpw maior tentadas antes desta e por que falharam."},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      },
+      "allOf": [
+        {"if": {"properties": {"blocked": {"const": true}}}, "then": {"properties": {"blocked_reason": {"type": "string"}, "primary_for": {"maxItems": 0}}}, "else": {"properties": {"blocked_reason": {"const": null}}}},
+        {"if": {"properties": {"placement": {"const": "cpu_only"}}}, "then": {"properties": {"n_gpu_layers": {"const": 0}}}},
+        {"if": {"properties": {"placement": {"const": "hybrid"}}}, "then": {"properties": {"n_gpu_layers": {"minimum": 1}, "quant": {"properties": {"format": {"const": "GGUF"}}}, "by_pool": {"minItems": 2}}}}
+      ]
+    },
+    "rejected": {
+      "type": "object",
+      "required": ["model", "reason_code", "message", "closest", "missing_bytes", "skipped_quants"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {"$ref": "#/$defs/model_ref"},
+        "reason_code": {"enum": ["ctx_exceeds_max", "kv_model_unsupported", "below_quality_floor", "no_usable_quant", "does_not_fit", "format_requires_full_gpu", "no_gpu_for_format"]},
+        "message": {"type": "string", "minLength": 1, "description": "Texto pt-BR gerado por template no solver, nunca por LLM."},
+        "closest": {
+          "description": "Tentativa (quant, placement) de menor déficit; null quando a rejeição é anterior ao cálculo (ctx, mla).",
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "required": ["quant", "placement", "total_bytes", "by_pool"], "additionalProperties": false,
+             "properties": {"quant": {"$ref": "#/$defs/quant_ref"}, "placement": {"$ref": "#/$defs/placement"}, "total_bytes": {"type": "integer", "minimum": 1}, "by_pool": {"type": "array", "items": {"$ref": "#/$defs/pool_usage"}}}}
+          ]
+        },
+        "missing_bytes": {"type": ["integer", "null"], "minimum": 1, "description": "Bytes que faltam para a tentativa 'closest' chegar ao tier limite: max sobre os pools de (total_bytes - floor(0.95*budget_bytes)). null se não houve cálculo."},
+        "skipped_quants": {"type": "array", "items": {"$ref": "#/$defs/skipped_quant"}}
+      },
+      "allOf": [
+        {"if": {"properties": {"reason_code": {"enum": ["does_not_fit", "format_requires_full_gpu"]}}}, "then": {"properties": {"missing_bytes": {"type": "integer"}, "closest": {"type": "object"}}}}
+      ]
+    },
+    "warning": {
+      "type": "object",
+      "required": ["code", "severity", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool"]},
+        "severity": {"enum": ["info", "warn"]},
+        "message": {"type": "string", "minLength": 1},
+        "field": {"type": "string", "description": "Caminho JSON do campo relacionado, ex. 'memory.speed_mts'."}
+      }
+    }
+  }
+}

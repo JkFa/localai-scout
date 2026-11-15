@@ -14,7 +14,8 @@ Decisões tomadas e por quê: `DECISIONS.md`.
 - `scout/` — CLI e biblioteca Python, stdlib-first
 - `scout/server.py` — backend LOCAL, `scout serve`, bind só em 127.0.0.1:8765
 - `web/` — frontend estático, sem build, publicado no GitHub Pages
-- O frontend tem dois modos. ARQUIVO: o usuário sobe o `system.json` gerado
+- O frontend tem dois modos. ARQUIVO: o usuário sobe o `feasibility.json` (ou só o `system.json`,
+  que mostra apenas o Diagnóstico) gerado
   pela CLI; funciona sempre, sem backend, offline. LIVE: fala com o backend
   local por HTTP. ARQUIVO é o caminho primário e nunca pode quebrar.
 - Nenhum dado de hardware sai da máquina. Sem telemetria, sem analytics,

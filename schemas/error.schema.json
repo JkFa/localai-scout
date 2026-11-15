@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/localai-scout/schemas/error.schema.json",
+  "title": "LocalAI Scout — erro do backend local",
+  "description": "Corpo de toda resposta de erro de `scout serve`. Mapeamento de status: bad_request/invalid_json/schema_invalid 400, unauthorized 401, forbidden_origin/forbidden_host 403, not_found 404, method_not_allowed 405, payload_too_large 413, unsupported_media_type 415, bench_disabled 501, internal 500. A mensagem nunca ecoa o token nem o header Authorization.",
+  "type": "object",
+  "required": ["error"],
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {"enum": ["bad_request", "invalid_json", "schema_invalid", "unauthorized", "forbidden_origin", "forbidden_host", "not_found", "method_not_allowed", "payload_too_large", "unsupported_media_type", "bench_disabled", "internal"]},
+        "message": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    }
+  }
+}

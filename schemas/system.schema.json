@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/localai-scout/schemas/system.schema.json",
+  "title": "LocalAI Scout — system.json",
+  "description": "Saída de `scout collect` e de GET /system. Todo dado coletado tem a forma Field {value, source, confidence}. Não detectado = value null + confidence low; nunca 0. Unidades: bytes inteiros, bytes/s inteiros, MT/s inteiros. Nenhum campo em GB. Proibido por desenho (additionalProperties false): hostname, usuário, números de série, MAC, caminhos sob o home.",
+  "type": "object",
+  "required": ["schema_version", "kind", "scout_version", "collected_at", "platform", "os", "cpu", "memory", "gpus", "disks", "power", "runtimes", "probes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "system"},
+    "scout_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"},
+    "collected_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$", "description": "UTC, RFC 3339 com sufixo Z."},
+    "platform": {"enum": ["linux", "darwin", "windows", "other"]},
+    "fixture": {"$ref": "#/$defs/fixture"},
+    "os": {
+      "type": "object",
+      "required": ["name", "version", "kernel", "arch"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/f_str"},
+        "version": {"$ref": "#/$defs/f_str"},
+        "kernel": {"$ref": "#/$defs/f_str"},
+        "arch": {"$ref": "#/$defs/f_str"}
+      }
+    },
+    "cpu": {
+      "type": "object",
+      "required": ["model", "vendor", "cores_logical", "cores_physical", "cores_performance", "cores_efficiency", "isa"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {"$ref": "#/$defs/f_str"},
+        "vendor": {"$ref": "#/$defs/f_str"},
+        "cores_logical": {"$ref": "#/$defs/f_count"},
+        "cores_physical": {"$ref": "#/$defs/f_count"},
+        "cores_performance": {"$ref": "#/$defs/f_count", "description": "Núcleos físicos de performance. Única base para n_threads. Em CPU não híbrida = cores_physical (source deve dizer 'derived')."},
+        "cores_efficiency": {"$ref": "#/$defs/f_int", "description": "E-cores; 0 é valor legítimo em CPU não híbrida detectada como tal."},
+        "isa": {
+          "type": "object",
+          "required": ["avx2", "avx512", "amx", "neon", "sve"],
+          "additionalProperties": false,
+          "properties": {
+            "avx2": {"$ref": "#/$defs/f_bool"},
+            "avx512": {"$ref": "#/$defs/f_bool"},
+            "amx": {"$ref": "#/$defs/f_bool"},
+            "neon": {"$ref": "#/$defs/f_bool"},
+            "sve": {"$ref": "#/$defs/f_bool"}
+          }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "required": ["ram_total_bytes", "type", "speed_mts", "channels", "bandwidth_bytes_per_s", "unified", "swap_total_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "ram_total_bytes": {"$ref": "#/$defs/f_bytes", "description": "M1: ram_total. Nunca 'RAM livre'."},
+        "type": {"$ref": "#/$defs/f_str", "description": "DDR4, DDR5, LPDDR5X... como reportado pelo dmidecode/system_profiler."},
+        "speed_mts": {"$ref": "#/$defs/f_count"},
+        "channels": {"$ref": "#/$defs/f_count"},
+        "bandwidth_bytes_per_s": {"$ref": "#/$defs/f_bytes", "description": "M1: bw_cpu. Se estimada por MT/s*canais*8 ou por tabela, source começa com 'estimate:' e confidence <= medium."},
+        "unified": {"$ref": "#/$defs/f_bool", "description": "M1: unified_memory. true => um único pool."},
+        "swap_total_bytes": {"$ref": "#/$defs/f_bytes", "description": "Só para aviso. Nunca usado para aumentar orçamento."}
+      }
+    },
+    "gpus": {
+      "description": "Field cujo value é a lista de GPUs. value null = detecção falhou (desconhecido); [] = detectado que não há GPU utilizável. Multi-GPU: todas listadas; o solver v1 usa uma só (ver DECISIONS.md).",
+      "allOf": [{"$ref": "#/$defs/field_base"}],
+      "properties": {"value": {"type": ["array", "null"], "items": {"$ref": "#/$defs/gpu"}}}
+    },
+    "disks": {
+      "allOf": [{"$ref": "#/$defs/field_base"}],
+      "properties": {"value": {"type": ["array", "null"], "items": {"$ref": "#/$defs/disk"}}}
+    },
+    "power": {
+      "type": "object",
+      "required": ["has_battery", "on_battery"],
+      "additionalProperties": false,
+      "properties": {
+        "has_battery": {"$ref": "#/$defs/f_bool"},
+        "on_battery": {"$ref": "#/$defs/f_bool"}
+      }
+    },
+    "runtimes": {
+      "type": "object",
+      "description": "Presença no PATH. Nunca grava o caminho (pode conter o nome do usuário).",
+      "required": ["ollama", "llama_cli", "llama_server", "llama_bench", "lm_studio", "comfyui", "ollama_models"],
+      "additionalProperties": false,
+      "properties": {
+        "ollama": {"$ref": "#/$defs/f_bool"},
+        "llama_cli": {"$ref": "#/$defs/f_bool"},
+        "llama_server": {"$ref": "#/$defs/f_bool"},
+        "llama_bench": {"$ref": "#/$defs/f_bool"},
+        "lm_studio": {"$ref": "#/$defs/f_bool"},
+        "comfyui": {"$ref": "#/$defs/f_bool"},
+        "ollama_models": {
+          "allOf": [{"$ref": "#/$defs/field_base"}],
+          "properties": {"value": {"type": ["array", "null"], "items": {
+            "type": "object", "required": ["name", "size_bytes"], "additionalProperties": false,
+            "properties": {"name": {"type": "string", "minLength": 1}, "size_bytes": {"type": ["integer", "null"], "minimum": 0}}
+          }}}
+        }
+      }
+    },
+    "probes": {
+      "type": "array",
+      "description": "Registro de cada sonda tentada: 'qualquer detecção que falhe registra o motivo e segue'.",
+      "items": {
+        "type": "object",
+        "required": ["probe", "status", "message"],
+        "additionalProperties": false,
+        "properties": {
+          "probe": {"type": "string", "minLength": 1},
+          "status": {"enum": ["ok", "not_found", "permission_denied", "timeout", "error", "skipped"]},
+          "message": {"type": "string"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "fixture": {
+      "type": "object",
+      "description": "Presente só em fixtures/demo. O frontend mostra faixa 'DADOS SINTÉTICOS' quando existe.",
+      "required": ["synthetic", "description"],
+      "additionalProperties": false,
+      "properties": {"synthetic": {"const": true}, "description": {"type": "string"}}
+    },
+    "field_base": {
+      "type": "object",
+      "required": ["value", "source", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "value": true,
+        "source": {"type": "string", "minLength": 1, "maxLength": 200, "description": "Sonda de origem: 'lscpu', '/proc/meminfo:MemTotal', 'nvidia-smi', 'estimate:mts*channels*8', 'derived:cores_physical', 'fixture', 'none'."},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "note": {"type": "string", "maxLength": 500}
+      },
+      "if": {"properties": {"value": {"type": "null"}}, "required": ["value"]},
+      "then": {"properties": {"confidence": {"const": "low"}}}
+    },
+    "f_bytes": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"type": ["integer", "null"], "minimum": 0}}},
+    "f_int": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"type": ["integer", "null"], "minimum": 0}}},
+    "f_count": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"type": ["integer", "null"], "minimum": 1}}},
+    "f_bool": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"type": ["boolean", "null"]}}},
+    "f_str": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"type": ["string", "null"], "minLength": 1}}},
+    "gpu": {
+      "type": "object",
+      "required": ["index", "vendor", "name", "vram_total_bytes", "vram_free_bytes", "bandwidth_bytes_per_s", "driver_version", "compute_capability", "backend", "bf16", "fp8", "flash_attention"],
+      "additionalProperties": false,
+      "properties": {
+        "index": {"type": "integer", "minimum": 0, "description": "Índice estável na ordem da sonda (nvidia-smi/rocm-smi)."},
+        "vendor": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"enum": ["nvidia", "amd", "intel", "apple", "other", null]}}},
+        "name": {"$ref": "#/$defs/f_str"},
+        "vram_total_bytes": {"$ref": "#/$defs/f_bytes", "description": "M1: vram_total. Em memória unificada: null (o pool é memory.ram_total_bytes)."},
+        "vram_free_bytes": {"$ref": "#/$defs/f_bytes", "description": "M1: vram_free, medido no instante da coleta; define vram_display."},
+        "bandwidth_bytes_per_s": {"$ref": "#/$defs/f_bytes", "description": "M1: bw_gpu. Origem ainda em aberto (DECISIONS.md)."},
+        "driver_version": {"$ref": "#/$defs/f_str"},
+        "compute_capability": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]+$"}}},
+        "backend": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"enum": ["cuda", "rocm", "metal", "vulkan", "sycl", "none", null]}}},
+        "bf16": {"$ref": "#/$defs/f_bool"},
+        "fp8": {"$ref": "#/$defs/f_bool"},
+        "flash_attention": {"$ref": "#/$defs/f_bool"}
+      }
+    },
+    "disk": {
+      "type": "object",
+      "required": ["mount", "kind", "total_bytes", "free_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "mount": {"type": "string", "minLength": 1, "description": "Ponto de montagem do sistema (/, /home). Nunca um caminho com nome de usuário."},
+        "kind": {"allOf": [{"$ref": "#/$defs/field_base"}], "properties": {"value": {"enum": ["nvme", "ssd", "hdd", "unknown", null]}}},
+        "total_bytes": {"$ref": "#/$defs/f_bytes"},
+        "free_bytes": {"$ref": "#/$defs/f_bytes"}
+      }
+    }
+  }
+}

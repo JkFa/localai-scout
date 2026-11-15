@@ -1,0 +1,580 @@
+{
+  "schema_version": 1,
+  "kind": "feasibility",
+  "scout_version": "0.1.0",
+  "fixture": {
+    "synthetic": true,
+    "description": "Plano para o perfil 2 sintético contra o catálogo fictício. Números calculados pelas fórmulas de PROMPT.md M1 + propostas em DECISIONS.md (n_gpu contra 0.95*orçamento; MoE aplica fração ativa a cada trecho)."
+  },
+  "inputs": {
+    "intent": {
+      "tasks": [
+        "chat"
+      ],
+      "ctx": 8192,
+      "commercial_use": false,
+      "batch": 1,
+      "kv_quant": "f16"
+    },
+    "system": {
+      "schema_version": 1,
+      "kind": "system",
+      "scout_version": "0.1.0",
+      "collected_at": "2026-11-15T12:00:00Z",
+      "platform": "linux",
+      "fixture": {
+        "synthetic": true,
+        "description": "Perfil 2 de PROMPT.md (desktop 16 GB DDR4 dual-channel + GPU NVIDIA 12 GB). Valores SINTÉTICOS para exemplo de contrato; nenhum é medição real."
+      },
+      "os": {
+        "name": {
+          "value": "Ubuntu",
+          "source": "/etc/os-release:NAME",
+          "confidence": "high"
+        },
+        "version": {
+          "value": "24.04",
+          "source": "/etc/os-release:VERSION_ID",
+          "confidence": "high"
+        },
+        "kernel": {
+          "value": "6.8.0-fixture",
+          "source": "platform.release",
+          "confidence": "high"
+        },
+        "arch": {
+          "value": "x86_64",
+          "source": "platform.machine",
+          "confidence": "high"
+        }
+      },
+      "cpu": {
+        "model": {
+          "value": "FIXTURE CPU 6C/12T",
+          "source": "lscpu",
+          "confidence": "high"
+        },
+        "vendor": {
+          "value": "GenuineIntel",
+          "source": "lscpu",
+          "confidence": "high"
+        },
+        "cores_logical": {
+          "value": 12,
+          "source": "lscpu",
+          "confidence": "high"
+        },
+        "cores_physical": {
+          "value": 6,
+          "source": "lscpu",
+          "confidence": "high"
+        },
+        "cores_performance": {
+          "value": 6,
+          "source": "derived:cores_physical",
+          "confidence": "high",
+          "note": "CPU não híbrida"
+        },
+        "cores_efficiency": {
+          "value": 0,
+          "source": "derived:cpu_not_hybrid",
+          "confidence": "medium"
+        },
+        "isa": {
+          "avx2": {
+            "value": true,
+            "source": "lscpu:flags",
+            "confidence": "high"
+          },
+          "avx512": {
+            "value": false,
+            "source": "lscpu:flags",
+            "confidence": "high"
+          },
+          "amx": {
+            "value": false,
+            "source": "lscpu:flags",
+            "confidence": "high"
+          },
+          "neon": {
+            "value": false,
+            "source": "platform.machine",
+            "confidence": "high"
+          },
+          "sve": {
+            "value": false,
+            "source": "platform.machine",
+            "confidence": "high"
+          }
+        }
+      },
+      "memory": {
+        "ram_total_bytes": {
+          "value": 17179869184,
+          "source": "/proc/meminfo:MemTotal",
+          "confidence": "high"
+        },
+        "type": {
+          "value": "DDR4",
+          "source": "dmidecode",
+          "confidence": "medium"
+        },
+        "speed_mts": {
+          "value": 3200,
+          "source": "dmidecode",
+          "confidence": "medium"
+        },
+        "channels": {
+          "value": 2,
+          "source": "dmidecode",
+          "confidence": "medium"
+        },
+        "bandwidth_bytes_per_s": {
+          "value": 51200000000,
+          "source": "estimate:mts*channels*8",
+          "confidence": "medium",
+          "note": "3200 MT/s * 2 canais * 8 bytes"
+        },
+        "unified": {
+          "value": false,
+          "source": "derived:platform",
+          "confidence": "high"
+        },
+        "swap_total_bytes": {
+          "value": 2147483648,
+          "source": "/proc/meminfo:SwapTotal",
+          "confidence": "high"
+        }
+      },
+      "gpus": {
+        "value": [
+          {
+            "index": 0,
+            "vendor": {
+              "value": "nvidia",
+              "source": "nvidia-smi",
+              "confidence": "high"
+            },
+            "name": {
+              "value": "FIXTURE NVIDIA 12GB (perfil 2)",
+              "source": "nvidia-smi",
+              "confidence": "high"
+            },
+            "vram_total_bytes": {
+              "value": 12884901888,
+              "source": "nvidia-smi:memory.total",
+              "confidence": "high"
+            },
+            "vram_free_bytes": {
+              "value": 12400000000,
+              "source": "nvidia-smi:memory.free",
+              "confidence": "high"
+            },
+            "bandwidth_bytes_per_s": {
+              "value": 300000000000,
+              "source": "fixture",
+              "confidence": "medium",
+              "note": "valor sintético redondo, não é especificação de produto"
+            },
+            "driver_version": {
+              "value": "000.00-fixture",
+              "source": "nvidia-smi:driver_version",
+              "confidence": "high"
+            },
+            "compute_capability": {
+              "value": null,
+              "source": "nvidia-smi:compute_cap",
+              "confidence": "low",
+              "note": "sintético: deixado null para exercitar o caminho de campo ausente"
+            },
+            "backend": {
+              "value": "cuda",
+              "source": "derived:vendor",
+              "confidence": "high"
+            },
+            "bf16": {
+              "value": null,
+              "source": "derived:compute_capability",
+              "confidence": "low"
+            },
+            "fp8": {
+              "value": null,
+              "source": "derived:compute_capability",
+              "confidence": "low"
+            },
+            "flash_attention": {
+              "value": null,
+              "source": "derived:compute_capability",
+              "confidence": "low"
+            }
+          }
+        ],
+        "source": "nvidia-smi",
+        "confidence": "high"
+      },
+      "disks": {
+        "value": [
+          {
+            "mount": "/",
+            "kind": {
+              "value": "nvme",
+              "source": "lsblk:rota+tran",
+              "confidence": "medium"
+            },
+            "total_bytes": {
+              "value": 500000000000,
+              "source": "os.statvfs",
+              "confidence": "high"
+            },
+            "free_bytes": {
+              "value": 200000000000,
+              "source": "os.statvfs",
+              "confidence": "high"
+            }
+          }
+        ],
+        "source": "os.statvfs+lsblk",
+        "confidence": "high"
+      },
+      "power": {
+        "has_battery": {
+          "value": false,
+          "source": "/sys/class/power_supply",
+          "confidence": "high"
+        },
+        "on_battery": {
+          "value": false,
+          "source": "/sys/class/power_supply",
+          "confidence": "high"
+        }
+      },
+      "runtimes": {
+        "ollama": {
+          "value": false,
+          "source": "PATH",
+          "confidence": "high"
+        },
+        "llama_cli": {
+          "value": true,
+          "source": "PATH",
+          "confidence": "high"
+        },
+        "llama_server": {
+          "value": true,
+          "source": "PATH",
+          "confidence": "high"
+        },
+        "llama_bench": {
+          "value": true,
+          "source": "PATH",
+          "confidence": "high"
+        },
+        "lm_studio": {
+          "value": false,
+          "source": "PATH",
+          "confidence": "high"
+        },
+        "comfyui": {
+          "value": false,
+          "source": "PATH",
+          "confidence": "high"
+        },
+        "ollama_models": {
+          "value": null,
+          "source": "ollama list",
+          "confidence": "low",
+          "note": "ollama ausente do PATH"
+        }
+      },
+      "probes": [
+        {
+          "probe": "lscpu",
+          "status": "ok",
+          "message": ""
+        },
+        {
+          "probe": "dmidecode",
+          "status": "ok",
+          "message": "fixture"
+        },
+        {
+          "probe": "nvidia-smi",
+          "status": "ok",
+          "message": ""
+        },
+        {
+          "probe": "rocm-smi",
+          "status": "not_found",
+          "message": "rocm-smi não está no PATH"
+        },
+        {
+          "probe": "ollama",
+          "status": "not_found",
+          "message": "ollama não está no PATH"
+        }
+      ]
+    },
+    "catalog": {
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "model_count": 5,
+      "oldest_verified_at": "2026-11-15"
+    },
+    "tuning": {
+      "eta_gpu": 0.75,
+      "eta_cpu": 0.6,
+      "source": "default"
+    }
+  },
+  "pools": [
+    {
+      "id": "gpu",
+      "gpu_index": 0,
+      "total_bytes": 12884901888,
+      "reserved_bytes": 1084901888,
+      "usable_bytes": 11800000000,
+      "bandwidth_bytes_per_s": 300000000000,
+      "eta": 0.75,
+      "provenance": {
+        "total_bytes": "measured",
+        "reserved_bytes": "calculated",
+        "usable_bytes": "calculated",
+        "bandwidth_bytes_per_s": "measured",
+        "eta": "estimated"
+      }
+    },
+    {
+      "id": "cpu",
+      "gpu_index": null,
+      "total_bytes": 17179869184,
+      "reserved_bytes": 3000000000,
+      "usable_bytes": 14179869184,
+      "bandwidth_bytes_per_s": 51200000000,
+      "eta": 0.6,
+      "provenance": {
+        "total_bytes": "measured",
+        "reserved_bytes": "calculated",
+        "usable_bytes": "calculated",
+        "bandwidth_bytes_per_s": "estimated",
+        "eta": "estimated"
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "model": {
+        "id": "test/dense-7b",
+        "source_url": "https://example.invalid/test/dense-7b",
+        "license": "apache-2.0",
+        "license_source": "https://example.invalid/test/dense-7b",
+        "commercial_ok": true,
+        "tasks": [
+          "chat"
+        ],
+        "params_total": 7200000000,
+        "params_active": 7200000000,
+        "n_layers": 32
+      },
+      "quant": {
+        "format": "GGUF",
+        "name": "Q8_0",
+        "bpw": 8.5,
+        "file_bytes": 7650000000
+      },
+      "placement": "gpu_full",
+      "n_gpu_layers": 32,
+      "n_threads": 6,
+      "weights_bytes": 7650000000,
+      "kv_bytes": 1073741824,
+      "buffer_bytes": 563840000,
+      "total_bytes": 9287581824,
+      "by_pool": [
+        {
+          "pool": "gpu",
+          "weights_bytes": 7650000000,
+          "kv_bytes": 1073741824,
+          "buffer_bytes": 563840000,
+          "total_bytes": 9287581824,
+          "budget_bytes": 11800000000,
+          "tier": "confortavel"
+        }
+      ],
+      "tier": "confortavel",
+      "tokens_per_s_est": 29.41,
+      "ttft_s_est": null,
+      "confidence": "medium",
+      "confidence_reasons": [
+        "eta_default",
+        "ttft_unspecified"
+      ],
+      "blocked": false,
+      "blocked_reason": null,
+      "primary_for": [
+        "chat"
+      ],
+      "skipped_quants": [],
+      "provenance": {
+        "weights_bytes": "catalog",
+        "kv_bytes": "calculated",
+        "buffer_bytes": "calculated",
+        "total_bytes": "calculated",
+        "n_gpu_layers": "calculated",
+        "tokens_per_s_est": "estimated"
+      }
+    },
+    {
+      "model": {
+        "id": "test/moe-30b-a3b",
+        "source_url": "https://example.invalid/test/moe-30b-a3b",
+        "license": "apache-2.0",
+        "license_source": "https://example.invalid/test/moe-30b-a3b",
+        "commercial_ok": true,
+        "tasks": [
+          "chat",
+          "code"
+        ],
+        "params_total": 30000000000,
+        "params_active": 3000000000,
+        "n_layers": 48
+      },
+      "quant": {
+        "format": "GGUF",
+        "name": "Q4_K_M",
+        "bpw": 4.88,
+        "file_bytes": 18300000000
+      },
+      "placement": "hybrid",
+      "n_gpu_layers": 25,
+      "n_threads": 6,
+      "weights_bytes": 18300000000,
+      "kv_bytes": 805306368,
+      "buffer_bytes": 563840000,
+      "total_bytes": 19669146368,
+      "by_pool": [
+        {
+          "pool": "gpu",
+          "weights_bytes": 9531250000,
+          "kv_bytes": 805306368,
+          "buffer_bytes": 563840000,
+          "total_bytes": 10900396368,
+          "budget_bytes": 11800000000,
+          "tier": "limite"
+        },
+        {
+          "pool": "cpu",
+          "weights_bytes": 8768750000,
+          "kv_bytes": 0,
+          "buffer_bytes": 0,
+          "total_bytes": 8768750000,
+          "budget_bytes": 14179869184,
+          "tier": "confortavel"
+        }
+      ],
+      "tier": "limite",
+      "tokens_per_s_est": 30.51,
+      "ttft_s_est": null,
+      "confidence": "medium",
+      "confidence_reasons": [
+        "bandwidth_estimated",
+        "eta_default",
+        "ttft_unspecified"
+      ],
+      "blocked": false,
+      "blocked_reason": null,
+      "primary_for": [],
+      "skipped_quants": [],
+      "provenance": {
+        "weights_bytes": "catalog",
+        "kv_bytes": "calculated",
+        "buffer_bytes": "calculated",
+        "total_bytes": "calculated",
+        "n_gpu_layers": "calculated",
+        "tokens_per_s_est": "estimated"
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "model": {
+        "id": "test/mla-16b",
+        "source_url": "https://example.invalid/test/mla-16b",
+        "license": "other",
+        "license_source": "https://example.invalid/test/mla-16b",
+        "commercial_ok": null,
+        "tasks": [
+          "chat"
+        ],
+        "params_total": 16000000000,
+        "params_active": 2400000000,
+        "n_layers": 27
+      },
+      "reason_code": "kv_model_unsupported",
+      "message": "Atenção latente (MLA): a fórmula de KV superestima; modelo não avaliado nesta versão.",
+      "closest": null,
+      "missing_bytes": null,
+      "skipped_quants": []
+    },
+    {
+      "model": {
+        "id": "test/dense-70b",
+        "source_url": "https://example.invalid/test/dense-70b",
+        "license": "test-noncommercial",
+        "license_source": "https://example.invalid/test/dense-70b",
+        "commercial_ok": false,
+        "tasks": [
+          "chat"
+        ],
+        "params_total": 70000000000,
+        "params_active": 70000000000,
+        "n_layers": 80
+      },
+      "reason_code": "format_requires_full_gpu",
+      "message": "EXL2 exige residência total na VRAM e não cabe na GPU.",
+      "closest": {
+        "quant": {
+          "format": "EXL2",
+          "name": "4.0bpw",
+          "bpw": 4.0571,
+          "file_bytes": 35500000000
+        },
+        "placement": "gpu_full",
+        "total_bytes": 38748194560,
+        "by_pool": [
+          {
+            "pool": "gpu",
+            "weights_bytes": 35500000000,
+            "kv_bytes": 2684354560,
+            "buffer_bytes": 563840000,
+            "total_bytes": 38748194560,
+            "budget_bytes": 11800000000,
+            "tier": "inviavel"
+          }
+        ]
+      },
+      "missing_bytes": 27538194560,
+      "skipped_quants": []
+    }
+  ],
+  "excluded": {
+    "incomplete": 1,
+    "task_mismatch": 0
+  },
+  "warnings": [
+    {
+      "code": "swap_not_a_fix",
+      "severity": "info",
+      "message": "Aumentar swap não faz modelo maior rodar: pesos paginados para disco derrubam a geração para ~0,1 token/s. Alavancas: KV em q8_0, menos contexto, bpw menor dentro do piso, modelo menor."
+    },
+    {
+      "code": "bandwidth_estimated",
+      "severity": "info",
+      "message": "Banda da RAM estimada por MT/s x canais x 8.",
+      "field": "memory.bandwidth_bytes_per_s"
+    },
+    {
+      "code": "hardware_field_missing",
+      "severity": "info",
+      "message": "compute_capability não detectado; bf16/fp8/flash attention desconhecidos.",
+      "field": "gpus.value[0].compute_capability"
+    }
+  ]
+}
