@@ -26,7 +26,7 @@ MODEL = "test/synth-4b"
 GB = 1_000_000_000
 BW = 40 * GB
 BYTES = 3_280_000_000  # 4e9 params x 6,56 bpw / 8; medido = 40e9 / 3,28e9 = 12,2 tok/s
-CHECK_IDS = list(range(1, 11))
+CHECK_IDS = list(range(1, 12))
 
 
 def _v(n):
@@ -45,11 +45,10 @@ def _catalog() -> dict:
 
 
 def _identity(s: dict) -> dict:
-    return {"platform": s["platform"], "os.arch": _v(s["os"]["arch"]), "os.kernel": _v(s["os"]["kernel"]),
+    return {"platform": s["platform"], "os.arch": _v(s["os"]["arch"]),
             "cpu.model": _v(s["cpu"]["model"]), "cpu.cores_physical": _v(s["cpu"]["cores_physical"]),
             "memory.ram_total_bytes": _v(s["memory"]["ram_total_bytes"]),
-            "gpu.name": None, "gpu.backend": None, "gpu.vram_total_bytes": None,
-            "memory.speed_mts": _v(s["memory"]["speed_mts"]), "memory.channels": _v(s["memory"]["channels"])}
+"gpu.name": None, "gpu.backend": None, "gpu.vram_total_bytes": None}
 
 
 def _cal(s: dict) -> dict:
@@ -60,7 +59,9 @@ def _cal(s: dict) -> dict:
                 "power": {"on_ac": True, "profile": "performance", "not_applicable": []},
                 "tool": "ollama", "tool_version": "9.9.9", "date": "2000-01-01",
                 "models": [{"id": MODEL, "architecture": "testarch", "bytes": BYTES}],
-                "prefill_tokens_per_s": None}]}}
+                "prefill_tokens_per_s": None,
+                "measured_with": {"os.kernel": _v(s["os"]["kernel"]), "memory.speed_mts": _v(s["memory"]["speed_mts"]),
+                                  "memory.channels": _v(s["memory"]["channels"])}}]}}
 
 
 def make_T(root: Path, *, mutate_cal=None, mutate_system=None) -> Path:
@@ -102,11 +103,11 @@ def good(tmp_path_factory):
 # ------------------------------------------------------------------ caminho feliz
 
 
-def test_good_T_passes_with_exit_zero_and_ten_ok_lines(good):
+def test_good_T_passes_with_exit_zero_and_eleven_ok_lines(good):
     T, r, _ = good
     assert r.returncode == 0, r.stdout + r.stderr
     assert verdicts(r.stdout) == {n: "OK" for n in CHECK_IDS}
-    assert r.stdout.strip().splitlines()[-1] == "10/10 checagens OK"
+    assert r.stdout.strip().splitlines()[-1] == "11/11 checagens OK"
 
 
 @pytest.mark.parametrize("n", CHECK_IDS)
@@ -138,7 +139,7 @@ def test_system_flag_overrides_default_location(tmp_path):
 
 
 def _speed_null(cal):
-    cal["machine"]["memory.speed_mts"] = None
+    cal["pools"]["cpu"][0]["measured_with"]["memory.speed_mts"] = None
 
 
 def _bytes_x4(cal):
@@ -163,8 +164,8 @@ def test_sabotaged_T_fails_loudly(tmp_path, mutate, must_fail):
     r = run(make_T(tmp_path, mutate_cal=mutate))
     assert r.returncode == 1, r.stdout + r.stderr
     v = verdicts(r.stdout)
-    assert len(v) == 10 and all(v[n] == "FALHA" for n in must_fail), r.stdout
-    assert f"{10 - sum(1 for x in v.values() if x == 'FALHA')}/10 checagens OK" in r.stdout
+    assert len(v) == 11 and all(v[n] == "FALHA" for n in must_fail), r.stdout
+    assert f"{11 - sum(1 for x in v.values() if x == 'FALHA')}/11 checagens OK" in r.stdout
 
 
 def test_missing_cal_is_a_setup_error(tmp_path):
@@ -228,5 +229,5 @@ def test_script_restores_bench_functions_and_never_opens_a_socket(tmp_path, caps
     monkeypatch.setattr(socket.socket, "connect", no_net)
     monkeypatch.setattr(socket, "create_connection", no_net)
     rc, v = _run_in_process(make_T(tmp_path), capsys)
-    assert rc == 0 and len(v) == 10
+    assert rc == 0 and len(v) == 11
     assert (bench.read_power, bench.engine_version) == orig

@@ -17,7 +17,7 @@ from typing import Any
 from scout import __version__
 from scout.estimate import fmt_gb, fmt_gbps
 from scout import calstore
-from scout.calibration import CalibrationInput, describe_power, machine_identity
+from scout.calibration import CalibrationInput, chosen_tools, describe_power, machine_identity, measured_with
 from scout.solver import TASKS, Intent, solve
 
 TUNING_PATH = Path(__file__).resolve().parent.parent / "data" / "tuning.json"
@@ -232,7 +232,7 @@ def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, inte
         if power is None:
             power = bench.read_power()
         if engines is None:
-            engines = {t: bench.engine_version(t) for t in calstore.tools_in(calibration.doc)}
+            engines = {t: bench.engine_version(t) for t in sorted(chosen_tools(calibration.doc, system, power))}
     result = solve(system, catalog, intent, tuning, power, calibration, engines)
     result["inputs"]["catalog"]["sha256"] = hashlib.sha256(catalog_raw).hexdigest()
     return result
@@ -472,7 +472,7 @@ def _cmd_bench(args: argparse.Namespace) -> int:
         sys.stderr.write("scout: medição incompleta: calibração NÃO gravada\n")
         return 1
     cal = B.build_calibration(results, results[0]["measured_at"][:10])
-    new_doc, notes = calstore.merge_calibration(old, identity, cal, __version__)
+    new_doc, notes = calstore.merge_calibration(old, identity, cal, __version__, measured_with(system))
     for n in notes:
         sys.stderr.write(f"scout: calibração: {n}\n")
     try:

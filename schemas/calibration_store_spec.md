@@ -1,4 +1,4 @@
-# Calibração local da máquina — enunciado (Tarefa 5, rev. 3)
+# Calibração local da máquina — enunciado (Tarefa 5, rev. 4)
 
 Fecha ONDE a calibração do `scout bench` é gravada e QUANDO o `scout plan` a
 aplica. Substitui, em `schemas/bench_spec.md`, o local de gravação e as regras
@@ -72,9 +72,18 @@ ficam como estão. Contrato do arquivo e do eco:
 
 ## 2. Identidade de hardware (`nucleo`, `scout/calibration.py`, puro)
 
-`machine_identity(system)` copia o `value` de cada campo abaixo do system.json.
-`gpu.*` vem da GPU que o solver escolhe para o pool gpu. Não entram hostname,
-serial, MAC, usuário, caminho nem hash.
+`machine_identity(system)` copia o `value` de cada campo da camada 1 do
+system.json. `gpu.*` vem da GPU que o solver escolhe para o pool gpu. Não entram
+hostname, serial, MAC, usuário, caminho nem hash.
+
+**Onde cada campo é gravado (rev. 4, achado 1 da revisão).** `machine` guarda só
+a camada 1, que é da máquina. Camada 2 e kernel descrevem a MEDIÇÃO e ficam em
+cada entrada, em `measured_with: {"os.kernel", "memory.speed_mts",
+"memory.channels"}`, copiados do `--system` do bench que gravou aquela entrada.
+Motivo: com tudo no nível do arquivo, rodar o bench de novo (noutro estado de
+energia, noutro kernel, agora com dmidecode) reescrevia o contexto de entradas
+antigas, e uma medição de outro kernel e com RAM nunca verificada saía `high`.
+O plan compara camada 2 e kernel ENTRADA POR ENTRADA (§4, escolha).
 
 **Camada 1 — DECIDE.** Só campos legíveis sem privilégio. Se o campo diferir,
 ou for null em qualquer lado, o efeito é `discard`: a calibração do pool não
@@ -139,16 +148,17 @@ Divergência na pilha de software nunca descarta a calibração. Com a máquina
 igual, a medição desta máquina continua melhor que o eta global (PE). O que
 muda é a confiança, e a saída diz o que mudou e sugere recalibrar.
 
-**Kernel.** `os.kernel` fica gravado na identidade, mas não decide. A chave de
-comparação é `kernel_key(s)`: o prefixo `^\d+\.\d+` ("7.0.0-43-generic" →
-"7.0"); sem esse padrão, a string inteira. Efeitos, na linha `match` de
-`os.kernel` (camada `software`):
+**Kernel.** `os.kernel` fica gravado no `measured_with` de cada entrada, mas
+não decide. A chave de comparação é `kernel_key(s)`: o prefixo `^\d+\.\d+`
+("6.99.0-1-exemplo" → "6.99"); sem esse padrão, a string inteira. Efeitos, na
+linha `match` de `os.kernel` do pool (camada `software`), contra a entrada
+escolhida:
 - igual → `none`;
 - diferente → `downgrade` (um nível abaixo), aviso warn
   `calibration_kernel_changed`: "A calibração foi medida com o kernel 6.8;
-  agora é 7.0. Rode `scout bench --run` para recalibrar.";
+  agora é 6.99. Rode `scout bench --run` para recalibrar.";
 - null em algum lado → `cap_medium`, aviso info `calibration_kernel_unknown`.
-Atualização de patch (`7.0.0-43` → `7.0.0-45`) não muda nada. O `major.minor`
+Atualização de patch (`6.99.0-1` → `6.99.0-3`) não muda nada. O `major.minor`
 muda com o HWE, mais ou menos a cada 6 meses.
 
 **Motor de inferência.**
@@ -165,8 +175,12 @@ muda com o HWE, mais ou menos a cada 6 meses.
   registra no DECISIONS.md se não houver `--version`.
 - Rede: quem lê é `run_plan` (CLI e serve), como já faz com a energia. A
   leitura acontece só se o arquivo de calibração existe e a origem não é
-  `disabled`, uma vez por ferramenta das entradas escolhidas, sempre em
-  loopback, que o bench já usa. O solver recebe `engines: dict[str, str | None]`
+  `disabled`, uma vez por ferramenta das entradas ESCOLHIDAS (pools descartados
+  ou ausentes não contam; a CLI obtém as ferramentas por
+  `calibration.chosen_tools(doc, system, power)`, pura, do `nucleo`), sempre em
+  loopback, que o bench já usa. A requisição HTTP ignora proxy do ambiente
+  (`build_opener(ProxyHandler({}))`): com `http_proxy` sem `no_proxy`, o
+  urllib mandaria `127.0.0.1` ao proxy (achado 3 da revisão). O solver recebe `engines: dict[str, str | None]`
   e só compara: a regra 5 continua valendo.
 - Efeitos:
   - `equal`: nenhum.
@@ -184,9 +198,13 @@ muda com o HWE, mais ou menos a cada 6 meses.
 `{on_ac, profile, not_applicable}`. `not_applicable` é a lista dos atributos
 que não existem nesta máquina. Um atributo nessa lista tem valor null; um
 atributo null FORA da lista é desconhecido. Detecção no linux:
-- `on_ac` não se aplica quando não existe `/sys/class/power_supply/BAT*`
-  (sem bateria, não há dimensão "na tomada ou na bateria"). Com bateria e
-  leitura falhando, é desconhecido.
+- `on_ac` não se aplica quando nenhuma entrada de `/sys/class/power_supply/`
+  tem `type` = `Battery` com `scope` diferente de `Device` (sem bateria do
+  sistema, não há dimensão "na tomada ou na bateria"). Decide-se pelo `type`, não
+  pelo nome: Asahi e notebooks ARM usam nomes como `macsmc-battery` (achado 2
+  da revisão); `scope: Device` é bateria de periférico (mouse, fone). Com
+  `power_supply` ilegível, ou bateria presente e leitura falhando, é
+  desconhecido.
 - `profile` não se aplica quando não existe `/sys/firmware/acpi/platform_profile`
   E `powerprofilesctl` não está no PATH. Com um dos dois presente e a leitura
   falhando, é desconhecido.
@@ -201,7 +219,11 @@ igual; os dois conhecidos → igual se os valores coincidem; conhecido de um
 lado e não aplicável do outro → diferente; desconhecido em qualquer lado →
 desconhecido.
 
-**Escolha da entrada, por pool:**
+**Escolha da entrada, por pool.** Antes da energia, cada entrada passa pela
+camada 2 do seu `measured_with` contra o system atual: entrada com camada 2
+conhecida dos dois lados e diferente é inelegível (`calibration_machine_mismatch`
+na linha `match` dela). Sem nenhuma entrada elegível, o pool é descartado e cai
+no eta. Entre as elegíveis:
 1. Entrada em que os dois atributos dão igual → `power_match: same`, nenhum
    efeito.
 2. Se não houver, e nenhum atributo atual for desconhecido → a entrada de
@@ -212,6 +234,14 @@ desconhecido.
    usada mesmo que pareça casar, porque o estado não está provado.
    `power_match: unknown`, `cap_medium`, aviso info `calibration_power_unknown`.
 Empate de banda: a data mais recente; depois, a ordem do arquivo.
+Depois da escolha, a camada 2 desconhecida e o kernel da ENTRADA ESCOLHIDA
+aplicam os efeitos de §2 e §3 (`cap_medium`, `downgrade`).
+
+**TTFT fora do casamento exato (achado 8 da revisão).** Com `power_match`
+`other_state` ou `unknown`, `ttft_s_est` usa o MENOR `prefill_tokens_per_s`
+não nulo entre as entradas elegíveis, não o da entrada escolhida: a de menor
+banda não é necessariamente a de menor prefill, e o critério é a direção do
+erro. As demais condições de §c da Tarefa 4 continuam valendo.
 
 **A condição dita por extenso.** As mensagens nomeiam os dois estados com
 `describe_power(power)`, que monta "na tomada, perfil performance", "na
@@ -242,10 +272,12 @@ desce um nível, com piso `low`: `power_mismatch`, `engine_changed` e
 
 - `inputs.calibration` passa a ser obrigatório, no formato
   `calibration.schema.json#/$defs/echo`. Traz a origem, o status, a versão
-  esperada, o arquivo lido (versões e identidade), uma linha `match` por
-  campo (com camada `1`, `2` ou `software`, escopo e efeito) e, por pool, o
-  status, os motivos, `power_match`, `available_power`, `engine` e a entrada
-  escolhida. Nunca traz o caminho do arquivo.
+  esperada, o arquivo lido (versões e identidade), as linhas `match` da
+  camada 1 no nível do eco e, por pool, o status, os motivos, `power_match`,
+  `available_power`, `engine`, a entrada escolhida e `match` próprio com as
+  linhas de camada 2 e `software` comparadas contra o `measured_with` da
+  entrada escolhida. Nunca traz o caminho do arquivo. No frontend, valores em
+  bytes das linhas `match` aparecem formatados com unidade (achado 5).
 - `inputs.tuning.calibration` sai. O `$defs/calibration` do feasibility vira
   `$ref` para `calibration.schema.json#/$defs/pool_calibration`.
 - `inputs.power` aparece quando o status é `used` ou `discarded`, no formato
@@ -276,15 +308,16 @@ desce um nível, com piso `low`: `power_mismatch`, `engine_changed` e
 - **Merge:** `B.write_calibration` deixa de existir. Na gravação:
   - com `calibration_schema_version` diferente, todos os pools antigos caem;
   - entradas antigas caem se algum campo de camada 1 do escopo do pool der
-    `different` ou `unknown`, ou se algum campo de camada 2 der `different`.
-    Camada 2 desconhecida não derruba: o plan a aplica em medium, e derrubar
-    faria uma máquina sem dmidecode legível nunca acumular estados de energia
-    (divergência do `coletor`, aprovada pelo humano). A pilha de software não
-    derruba entradas;
+    `different` ou `unknown` contra o `--system` atual, ou se a camada 2 do
+    `measured_with` DELA der `different`. Camada 2 desconhecida não derruba: o
+    plan a aplica em medium, e derrubar faria uma máquina sem dmidecode legível
+    nunca acumular estados de energia (divergência do `coletor`, aprovada pelo
+    humano). A pilha de software não derruba entradas;
   - no pool medido, a entrada com a mesma chave de energia (os dois atributos
     iguais, pela comparação de §4) é substituída; as outras ficam;
-  - a identidade gravada passa a ser a do `--system` atual (o kernel
-    inclusive).
+  - `machine` passa a ser a camada 1 do `--system` atual (igual à antiga, ou
+    as entradas teriam caído). O `measured_with` de cada entrada antiga NUNCA é
+    reescrito: só a entrada nova recebe o do `--system` atual (rev. 4).
   O stderr diz o que caiu e por quê.
 - **Arquivo:** a escrita é atômica (`mkdir(..., mode=0o700)`, `mkstemp` no
   mesmo diretório, `fsync`, `os.replace`; o temporário é removido se houver
@@ -360,6 +393,12 @@ com energia e motor injetados) falha a menos que:
 9. **schema da calibração:** com `calibration_schema_version: 99`,
    `discarded` e `calibration_schema_outdated`;
 10. com `--no-calibration`, `disabled` e sem `inputs.power`.
+11. **merge (rev. 4):** com uma entrada gravada com `measured_with` de kernel
+    `6.98` e `memory.speed_mts` null, um segundo bench sintético noutro estado
+    de energia, com kernel `6.99` e MT/s conhecido, mantém a entrada antiga com
+    o `measured_with` original; o plan no estado dela sai com
+    `calibration_kernel_changed` e `calibration_memory_unverified`, nunca
+    `high`.
 
 ## Ordem
 

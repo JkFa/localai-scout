@@ -35,6 +35,11 @@ MATCH_FIELDS: tuple[tuple[str, int | str, str], ...] = (
     ("memory.speed_mts", 2, "cpu"),
     ("memory.channels", 2, "cpu"),
 )
+# Camada 1 (identidade de HARDWARE, `machine` do arquivo) e o contexto da
+# MEDIÇÃO (`measured_with` de cada entrada: kernel e camada 2), rev. 4.
+MACHINE_FIELDS: tuple[str, ...] = tuple(f for f, layer, _ in MATCH_FIELDS if layer == 1)
+MEASURED_WITH_FIELDS: tuple[str, ...] = tuple(f for f, layer, _ in MATCH_FIELDS if layer != 1)
+LAYER2_FIELDS: tuple[str, ...] = tuple(f for f, layer, _ in MATCH_FIELDS if layer == 2)
 TOLERANT_FIELDS = frozenset({"memory.ram_total_bytes", "gpu.vram_total_bytes"})  # ±5% do maior
 
 # Escopo -> pools a que a linha se aplica. Camada 2 só no pool cpu (§2): no
@@ -82,33 +87,46 @@ def pool_gpu(system: dict) -> dict | None:
 
 
 def machine_identity(system: dict) -> dict[str, Any]:
-    """Identidade legível (calibration.schema.json#/$defs/machine): o `value`
-    de cada campo do system.json. Nada de hostname, serial, usuário, caminho."""
-    os_ = system.get("os", {})
+    """Camada 1 (calibration.schema.json#/$defs/machine): o `value` de cada
+    campo do system.json. Nada de hostname, serial, usuário, caminho."""
     cpu = system.get("cpu", {})
-    mem = system.get("memory", {})
     gpu = pool_gpu(system) or {}
     platform = system.get("platform")
     return {
         "platform": platform if isinstance(platform, str) else None,
-        "os.arch": _value(os_.get("arch")),
-        "os.kernel": _value(os_.get("kernel")),
+        "os.arch": _value(system.get("os", {}).get("arch")),
         "cpu.model": _value(cpu.get("model")),
         "cpu.cores_physical": _value(cpu.get("cores_physical")),
-        "memory.ram_total_bytes": _value(mem.get("ram_total_bytes")),
+        "memory.ram_total_bytes": _value(system.get("memory", {}).get("ram_total_bytes")),
         "gpu.name": _value(gpu.get("name")),
         "gpu.backend": _value(gpu.get("backend")),
         "gpu.vram_total_bytes": _value(gpu.get("vram_total_bytes")),
+    }
+
+
+def measured_with(system: dict) -> dict[str, Any]:
+    """Contexto da medição ($defs/measured_with): kernel e camada 2, gravados em
+    cada entrada pelo bench e nunca reescritos por benches posteriores."""
+    mem = system.get("memory", {})
+    return {
+        "os.kernel": _value(system.get("os", {}).get("kernel")),
         "memory.speed_mts": _value(mem.get("speed_mts")),
         "memory.channels": _value(mem.get("channels")),
     }
+
+
+def present_pools(system: dict) -> tuple[str, ...]:
+    """Pools que o solver monta para este system (mesma regra de _build_pools)."""
+    if _value(system.get("memory", {}).get("unified")) is True:
+        return ("unified",)
+    return (("gpu",) if pool_gpu(system) is not None else ()) + ("cpu",)
 
 
 _KERNEL_RE = re.compile(r"^\d+\.\d+")
 
 
 def kernel_key(s: str) -> str:
-    """"7.0.0-43-generic" -> "7.0"; sem o padrão major.minor, a string inteira."""
+    """"6.99.0-1-exemplo" -> "6.99"; sem o padrão major.minor, a string inteira."""
     m = _KERNEL_RE.match(s)
     return m.group(0) if m else s
 
@@ -144,10 +162,12 @@ def field_effect(layer: int | str, result: str) -> str:
 
 
 def match_lines(stored: dict, current: dict, file_pools: set[str] | frozenset[str]) -> list[dict[str, Any]]:
-    """Uma linha por campo de identidade. O efeito é o que a linha causa nos
+    """Uma linha por campo da camada 1. O efeito é o que a linha causa nos
     pools do seu escopo que têm entradas no arquivo; sem nenhum, `none`."""
     lines: list[dict[str, Any]] = []
     for field, layer, scope in MATCH_FIELDS:
+        if layer != 1:
+            continue
         s, c = stored.get(field), current.get(field)
         result = compare_field(field, s, c)
         applies = any(p in file_pools for p in SCOPE_POOLS[scope])
@@ -156,6 +176,29 @@ def match_lines(stored: dict, current: dict, file_pools: set[str] | frozenset[st
             "result": result, "effect": field_effect(layer, result) if applies else "none",
         })
     return lines
+
+
+def entry_match_lines(stored_mw: Any, current_mw: dict, pool_id: str) -> list[dict[str, Any]]:
+    """Linhas de kernel (software) e camada 2 de UMA entrada (o measured_with
+    dela) contra o system atual. Camada 2 só tem efeito no pool cpu."""
+    stored_mw = stored_mw if isinstance(stored_mw, dict) else {}
+    lines: list[dict[str, Any]] = []
+    for field, layer, scope in MATCH_FIELDS:
+        if layer == 1:
+            continue
+        s, c = stored_mw.get(field), current_mw.get(field)
+        result = compare_field(field, s, c)
+        lines.append({
+            "field": field, "layer": layer, "scope": scope, "stored": s, "current": c, "result": result,
+            "effect": field_effect(layer, result) if pool_id in SCOPE_POOLS[scope] else "none",
+        })
+    return lines
+
+
+def entry_eligible(entry: dict, current_mw: dict, pool_id: str) -> bool:
+    """Inelegível: camada 2 do measured_with conhecida dos dois lados e
+    diferente (só no pool cpu, §4 rev. 4)."""
+    return not any(ln["effect"] == "discard" for ln in entry_match_lines(entry.get("measured_with"), current_mw, pool_id))
 
 
 def _applies_to(line: dict, pool_id: str) -> bool:
@@ -260,6 +303,9 @@ def choose_entry(entries: list[dict], current: dict | None) -> tuple[dict, str]:
 class PoolDecision:
     entry: dict | None          # entrada aplicada; None se não vale (o pool usa eta)
     reasons: frozenset[str]     # motivos de confiança herdados pelos candidatos
+    # Entradas cujo prefill vale para o TTFT: só a escolhida com power_match
+    # same; senão todas as elegíveis, para o TTFT usar o MENOR prefill (§4).
+    prefill_entries: tuple[dict, ...] = ()
 
 
 def _w(code: str, severity: str, message: str, field: str | None = None) -> dict[str, Any]:
@@ -295,11 +341,15 @@ def _validate_entry(pool_id: str, e: Any) -> None:
         raise ValueError(f"calibração do pool {pool_id} inválida: banda inteira > 0 e overhead >= 0")
 
 
+def _eligible_split(entries: list[dict], current_mw: dict, pool_id: str) -> list[dict]:
+    return [e for e in entries if entry_eligible(e, current_mw, pool_id)]
+
+
 def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | None,
-             engines: dict[str, str | None] | None, present_pools: tuple[str, ...]
+             engines: dict[str, str | None] | None, present: tuple[str, ...]
              ) -> tuple[dict[str, Any], dict[str, PoolDecision], list[dict[str, Any]], dict | None]:
-    """Devolve (eco inputs.calibration, decisão por pool presente no arquivo,
-    avisos, inputs.power ou None)."""
+    """Devolve (eco inputs.calibration, decisão por pool do arquivo, avisos,
+    inputs.power ou None)."""
     base = {"calibration_schema_version": CALIBRATION_SCHEMA_VERSION, "store": None, "match": [], "pools": {}}
     if calibration is None or calibration.origin == "disabled":
         return {"origin": "disabled", "status": "disabled", **base}, {}, [], None
@@ -315,6 +365,7 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
     cur_power = normalize_power(power)
     stored_machine = doc.get("machine") if isinstance(doc.get("machine"), dict) else {}
     current_machine = machine_identity(system)
+    current_mw = measured_with(system)
     file_pools = sorted(doc["pools"])
     match = match_lines(stored_machine, current_machine, frozenset(file_pools))
     outdated = doc.get("calibration_schema_version") != CALIBRATION_SCHEMA_VERSION
@@ -346,16 +397,17 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
     echo_pools: dict[str, Any] = {}
     decisions: dict[str, PoolDecision] = {}
     applied_any = False
-    kernel_line = next(ln for ln in match if ln["field"] == "os.kernel")
-    mem_lines = [ln for ln in match if ln["layer"] == 2]
-    kernel_hit = mem_hit = False
+    mem_warning: dict[str, Any] | None = None
     for pid in file_pools:
         entries = doc["pools"][pid]
         if not isinstance(entries, list) or not entries:
             raise ValueError(f"calibração do pool {pid}: lista de entradas vazia")
         for e in entries:
             _validate_entry(pid, e)
-        entry, pmatch = choose_entry(entries, cur_power)
+        # Camada 2 entrada por entrada, ANTES da energia (§4 rev. 4).
+        eligible = _eligible_split(entries, current_mw, pid)
+        entry, pmatch = choose_entry(eligible or entries, cur_power)
+        pool_match = entry_match_lines(entry.get("measured_with"), current_mw, pid) if eligible else []
         tool = entry.get("tool")
         stored_v, current_v = entry.get("tool_version"), engines.get(tool)
         eng = "unknown" if stored_v is None or current_v is None else (
@@ -368,8 +420,22 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
             if ln["effect"] == "discard" and _applies_to(ln, pid):
                 discard.append("calibration_machine_unknown" if ln["result"] == "unknown"
                                else "calibration_machine_mismatch")
+        if not eligible:
+            discard.append("calibration_machine_mismatch")
+            if not outdated:
+                diffs = list(dict.fromkeys(
+                    f"{ln['field']}: calibração {_fmt_val(ln['stored'])}, agora {_fmt_val(ln['current'])}"
+                    for e in entries for ln in entry_match_lines(e.get("measured_with"), current_mw, pid)
+                    if ln["effect"] == "discard"))
+                first = next(ln["field"] for ln in entry_match_lines(entries[0].get("measured_with"), current_mw, pid)
+                             if ln["effect"] == "discard")
+                warnings.append(_w(
+                    "calibration_machine_mismatch", "warn",
+                    f"Nenhuma medição do pool {pid} foi feita com a RAM atual ({'; '.join(diffs)}): "
+                    "calibração do pool descartada, tokens/s volta ao eta. Rode `scout bench --run` "
+                    "nesta máquina para recalibrar.", first))
         reasons: list[str] = []
-        if pid not in present_pools:
+        if pid not in present:
             status = "pool_absent"
             reasons = ["calibration_pool_absent"] + discard
         elif discard:
@@ -414,15 +480,30 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
                            "rode `scout bench --run` para recalibrar.")
                 warnings.append(_w("calibration_engine_unknown", "info", msg,
                                    f"inputs.calibration.pools.{pid}.engine"))
-            if kernel_line["result"] == "different":
+            # Kernel e camada 2 DA ENTRADA ESCOLHIDA (§4 rev. 4).
+            kl = next(ln for ln in pool_match if ln["field"] == "os.kernel")
+            if kl["result"] == "different":
                 reasons.append("calibration_kernel_changed")
-                kernel_hit = True
-            elif kernel_line["result"] == "unknown":
+                warnings.append(_w(
+                    "calibration_kernel_changed", "warn",
+                    f"A calibração foi medida com o kernel {kernel_key(str(kl['stored']))}; agora é "
+                    f"{kernel_key(str(kl['current']))}. Rode `scout bench --run` para recalibrar.",
+                    "os.kernel"))
+            elif kl["result"] == "unknown":
                 reasons.append("calibration_kernel_unknown")
-                kernel_hit = True
-            if pid == "cpu" and any(ln["result"] == "unknown" for ln in mem_lines):
+                side = "neste system.json" if kl["current"] is None else "na medição usada"
+                warnings.append(_w(
+                    "calibration_kernel_unknown", "info",
+                    f"Versão do kernel não registrada {side}; a calibração fica em confiança média. "
+                    "Rode `scout bench --run` para recalibrar.", "os.kernel"))
+            mem = [ln for ln in pool_match if ln["effect"] == "cap_medium" and ln["layer"] == 2]
+            if mem:
                 reasons.append("calibration_memory_unverified")
-                mem_hit = True
+                if mem_warning is None:
+                    cur_missing = any(ln["current"] is None for ln in mem)
+                    mem_warning = _w("calibration_memory_unverified", "info",
+                                     _memory_unverified_text(current_machine["platform"], cur_missing),
+                                     mem[0]["field"])
 
         echo_pools[pid] = {
             "status": status,
@@ -431,28 +512,15 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
             "available_power": [normalize_power(e.get("power")) for e in entries],
             "engine": {"tool": tool, "stored_version": stored_v, "current_version": current_v, "result": eng},
             "calibration": entry,
+            "match": pool_match,
         }
-        decisions[pid] = PoolDecision(entry if status == "applied" else None, frozenset(reasons)
-                                      if status == "applied" else frozenset())
-
-    if kernel_hit:
-        s, c = kernel_line["stored"], kernel_line["current"]
-        if kernel_line["result"] == "different":
-            warnings.append(_w(
-                "calibration_kernel_changed", "warn",
-                f"A calibração foi medida com o kernel {kernel_key(str(s))}; agora é "
-                f"{kernel_key(str(c))}. Rode `scout bench --run` para recalibrar.", "os.kernel"))
+        if status == "applied":
+            prefill_entries = (entry,) if pmatch == "same" else tuple(eligible)
+            decisions[pid] = PoolDecision(entry, frozenset(reasons), prefill_entries)
         else:
-            side = "neste system.json" if c is None else "na calibração"
-            warnings.append(_w(
-                "calibration_kernel_unknown", "info",
-                f"Versão do kernel não registrada {side}; a calibração fica em confiança média. "
-                "Rode `scout bench --run` para recalibrar.", "os.kernel"))
-    if mem_hit:
-        cur_missing = any(ln["current"] is None for ln in mem_lines)
-        field = next(ln["field"] for ln in mem_lines if ln["result"] == "unknown")
-        warnings.append(_w("calibration_memory_unverified", "info",
-                           _memory_unverified_text(current_machine["platform"], cur_missing), field))
+            decisions[pid] = PoolDecision(None, frozenset())
+    if mem_warning is not None:
+        warnings.append(mem_warning)
 
     # Mensagens idênticas (ex.: motor parado em dois pools) saem uma vez só.
     seen: set[tuple[str, str]] = set()
@@ -475,3 +543,10 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
         "pools": echo_pools,
     }
     return echo, decisions, uniq, cur_power
+
+
+def chosen_tools(doc: dict, system: dict, power: dict | None) -> set[str]:
+    """Ferramentas das entradas que o plan aplicaria (pools descartados ou
+    ausentes não contam). A CLI lê a versão só destas (§3, Rede)."""
+    _, decisions, _, _ = evaluate(CalibrationInput("env", doc), system, power, None, present_pools(system))
+    return {d.entry["tool"] for d in decisions.values() if d.entry is not None and isinstance(d.entry.get("tool"), str)}

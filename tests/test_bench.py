@@ -193,8 +193,7 @@ def test_ollama_short_generation(monkeypatch):
 def test_ollama_unreachable(monkeypatch):
     def boom(*a, **k):
         raise OSError("sem rede")
-    monkeypatch.setattr(B.urllib.request, "urlopen", boom)
-    monkeypatch.setattr(B.urllib.request, "urlopen", boom)
+    monkeypatch.setattr(B.urllib.request.OpenerDirector, "open", boom)
     with pytest.raises(B.BenchError) as e:
         B._ollama_request("GET", "/api/tags")
     assert e.value.reason == "ollama_unreachable"
@@ -275,6 +274,42 @@ def test_read_power_desktop_has_nothing_applicable(monkeypatch, tmp_path):
     assert B.read_power(root, lambda b: None) == {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}
 
 
+def test_read_power_battery_by_type_not_name(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    root = _fake_sys(tmp_path, [("macsmc-battery", {"type": "Battery", "status": "Discharging", "scope": "System"}),
+                                ("macsmc-ac", {"type": "Mains", "online": "0"})], profile="balanced\n")
+    assert B.read_power(root, lambda b: None) == {"on_ac": False, "profile": "balanced", "not_applicable": []}
+
+
+def test_read_power_peripheral_battery_is_not_the_system_battery(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    root = _fake_sys(tmp_path, [("hidpp_battery_0", {"type": "Battery", "status": "Discharging", "scope": "Device"}),
+                                ("AC", {"type": "Mains", "online": "1"})])
+    assert B.read_power(root, lambda b: None)["not_applicable"] == ["on_ac", "profile"]
+
+
+def test_read_power_unreadable_type_is_unknown(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    root = _fake_sys(tmp_path, [("X", {"status": "?"})])
+    got = B.read_power(root, lambda b: None)
+    assert "on_ac" not in got["not_applicable"]
+
+
+def test_ollama_request_ignores_proxy_env(monkeypatch):
+    monkeypatch.setenv("http_proxy", "http://proxy.invalid:3128")
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:3128")
+    seen = {}
+
+    def fake_open(self, req, data=None, timeout=None):
+        seen["handlers"] = [type(h).__name__ for h in self.handlers]
+        seen["proxies"] = {k: v for h in self.handlers if hasattr(h, "proxies") for k, v in h.proxies.items()}
+        raise OSError("sem rede")
+    monkeypatch.setattr(B.urllib.request.OpenerDirector, "open", fake_open)
+    with pytest.raises(B.BenchError):
+        B._ollama_request("GET", "/api/version", timeout=1.0)
+    assert seen["proxies"] == {}
+
+
 def test_read_power_laptop_battery_and_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(B.platform, "system", lambda: "Linux")
     root = _fake_sys(tmp_path, [("BAT0", {"type": "Battery", "status": "Discharging", "scope": "System"}),
@@ -304,7 +339,7 @@ def test_read_power_other_platforms_never_crash(monkeypatch):
 def test_engine_version_failures_are_none(monkeypatch):
     def boom(*a, **k):
         raise OSError("sem rede")
-    monkeypatch.setattr(B.urllib.request, "urlopen", boom)
+    monkeypatch.setattr(B.urllib.request.OpenerDirector, "open", boom)
     assert B.engine_version("ollama") is None
     monkeypatch.setattr(B.subprocess, "run", boom)
     assert B.engine_version("llama-bench") is None

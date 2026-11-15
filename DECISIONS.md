@@ -792,3 +792,21 @@ rodadas também não mudou o resultado. Medições anteriores mais lentas (7,94 
 condições, e a causa não pode ser recuperada; a suspeita mais forte é pressão de memória (às 14:25 a máquina saía de
 7,5 GB em swap). Pressão pesada derruba o decode: 5,99 tok/s com 316 MB livres e swap ativo.
 **Consequência.** Qualquer divergência futura deste tamanho fica diagnosticável pelo bloco `conditions`.
+
+## 2026-11-15 — correções da revisão da Tarefa 5 (rev. 4 do enunciado)
+
+**Decisão (humano, sobre o relatório do `revisor`).**
+- Achado 1 (grave): kernel e camada 2 saem de `machine` e vão para `measured_with` em cada entrada, nunca reescrito
+  por benches posteriores. O plan compara camada 2 e kernel contra a entrada escolhida. Antes, um segundo bench
+  reescrevia o contexto das entradas antigas e uma medição de outro kernel, com RAM nunca verificada, saía `high`.
+  Alternativa descartada: apagar entradas antigas quando kernel ou MT/s mudam (joga fora medição boa).
+- Achado 2 (grave): bateria do sistema decidida por `type == Battery` e `scope != Device`, não pelo nome `BAT*`
+  (Asahi e ARM usam `macsmc-battery`; antes viravam "sem bateria" e davam `high` na bateria com a banda da tomada).
+- Achado 3 (médio): a leitura do Ollama ignora proxy do ambiente (o urllib mandava 127.0.0.1 ao `http_proxy`).
+- Achado 4: versão do motor lida só para ferramentas das entradas escolhidas (`chosen_tools`).
+- Achado 5: bytes com unidade na tabela de divergências do frontend. Achado 6: kernel real trocado por sintético.
+- Achado 8: fora do casamento exato de energia, o TTFT usa o menor prefill entre as entradas elegíveis.
+- Achado 7 NÃO aceito, registrado como limite conhecido: num desktop sem `platform_profile` e sem
+  `powerprofilesctl`, mas com TLP, tuned ou governor trocado à mão, o perfil é "não aplicável" dos dois lados e a
+  troca não é detectada. Tratar cpufreq/EPP como evidência de perfil tornaria o perfil desconhecido em quase toda
+  máquina Linux e prenderia todo desktop em `medium`, desfazendo a decisão PE.1.

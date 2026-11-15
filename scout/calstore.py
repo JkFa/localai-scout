@@ -12,14 +12,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-from scout.calibration import (CALIBRATION_SCHEMA_VERSION, MATCH_FIELDS, POWER_ATTRS, SCOPE_POOLS,
-                               CalibrationInput, compare_field, compare_power_attr, normalize_power)
+from scout.calibration import (CALIBRATION_SCHEMA_VERSION, MACHINE_FIELDS, MATCH_FIELDS, MEASURED_WITH_FIELDS,
+                               POWER_ATTRS, SCOPE_POOLS, CalibrationInput, compare_field, compare_power_attr,
+                               entry_eligible, normalize_power)
 
 FILE_NAME = "calibration.json"
 APP_DIR = "localai-scout"
 FILE_SCHEMA_VERSION = 1
 POOLS = ("gpu", "cpu", "unified")
-MACHINE_KEYS = tuple(f for f, _, _ in MATCH_FIELDS)
+MACHINE_KEYS = MACHINE_FIELDS
 
 
 class CalibrationError(Exception):
@@ -90,8 +91,10 @@ def validate_doc(doc: Any) -> list[str]:
         errs.append("machine ausente")
     else:
         miss = [k for k in MACHINE_KEYS if k not in machine]
-        if miss or set(machine) - set(MACHINE_KEYS):
-            errs.append(f"machine com chaves erradas (faltam: {', '.join(miss) or '-'})")
+        extra = sorted(set(machine) - set(MACHINE_KEYS))
+        if miss or extra:
+            errs.append(f"machine com chaves erradas (faltam: {', '.join(miss) or '-'}; "
+                        f"sobram: {', '.join(extra) or '-'})")
     pools = doc.get("pools")
     if not isinstance(pools, dict) or not pools:
         errs.append("pools ausente ou vazio")
@@ -130,6 +133,9 @@ def _entry_errors(e: Any) -> list[str]:
         errs.append("tool deve ser ollama ou llama-bench")
     if "tool_version" not in e or not (e["tool_version"] is None or (isinstance(e["tool_version"], str) and e["tool_version"])):
         errs.append("tool_version deve ser string ou null")
+    mw = e.get("measured_with")
+    if not isinstance(mw, dict) or set(mw) != set(MEASURED_WITH_FIELDS):
+        errs.append("measured_with deve ter os.kernel, memory.speed_mts e memory.channels")
     models = e.get("models")
     if not isinstance(models, list) or not models:
         errs.append("models vazio")
@@ -219,23 +225,35 @@ def same_power_key(a: dict | None, b: dict | None) -> bool:
 
 
 def identity_drop_reason(stored: dict, current: dict, pool: str) -> str | None:
-    """Motivo para descartar entradas antigas do pool, ou None. Camada 1: diferente ou null cai.
-    Camada 2: só `different` cai; desconhecido não derruba (o plan o trata como medium).
-    Pilha de software nunca derruba."""
+    """Motivo para descartar as entradas antigas do pool pela camada 1 (`machine` do arquivo contra o
+    --system atual): diferente ou null cai. Camada 2 e kernel são por entrada (`entry_drop_reason`)."""
     for field, layer, scope in MATCH_FIELDS:
-        if layer == "software" or pool not in SCOPE_POOLS[scope]:
+        if layer != 1 or pool not in SCOPE_POOLS[scope]:
             continue
         r = compare_field(field, stored.get(field), current.get(field))
-        if r == "different" or (r == "unknown" and layer == 1):
+        if r != "equal":
             return f"{field} {'difere' if r == 'different' else 'não lido'} " \
                    f"(gravado: {stored.get(field)!r}; agora: {current.get(field)!r})"
     return None
 
 
-def merge_calibration(old: dict | None, machine: dict, new_pools: dict[str, dict],
-                      scout_version: str) -> tuple[dict, list[str]]:
-    """-> (documento novo, mensagens do que caiu e por quê). Não toca em `old`."""
+def entry_drop_reason(entry: dict, current_mw: dict, pool: str) -> str | None:
+    """Camada 2 do `measured_with` DELA conhecida e diferente do --system atual. Desconhecida e kernel não derrubam."""
+    if entry_eligible(entry, current_mw, pool):
+        return None
+    mw = entry.get("measured_with") or {}
+    diffs = [f"{f}: gravado {mw.get(f)!r}, agora {current_mw.get(f)!r}" for f in MEASURED_WITH_FIELDS
+             if f != "os.kernel" and compare_field(f, mw.get(f), current_mw.get(f)) == "different"]
+    return "; ".join(diffs) or "camada 2 difere"
+
+
+def merge_calibration(old: dict | None, machine: dict, new_pools: dict[str, dict], scout_version: str,
+                      measured: dict | None = None) -> tuple[dict, list[str]]:
+    """-> (documento novo, mensagens do que caiu e por quê). Não toca em `old`.
+    `machine` e `measured` vêm do --system atual (camada 1; kernel e camada 2). Só a entrada NOVA recebe
+    `measured_with`; o das antigas nunca é reescrito."""
     notes: list[str] = []
+    measured = dict(measured) if measured is not None else {f: None for f in MEASURED_WITH_FIELDS}
     pools: dict[str, list[dict]] = {}
     if old is not None:
         if old.get("calibration_schema_version") != CALIBRATION_SCHEMA_VERSION:
@@ -246,9 +264,18 @@ def merge_calibration(old: dict | None, machine: dict, new_pools: dict[str, dict
                 why = identity_drop_reason(old.get("machine") or {}, machine, pid)
                 if why:
                     notes.append(f"pool {pid} antigo descartado ({len(old['pools'][pid])} entrada(s)): {why}")
-                else:
-                    pools[pid] = [dict(e) for e in old["pools"][pid]]
+                    continue
+                kept = []
+                for e in old["pools"][pid]:
+                    ewhy = entry_drop_reason(e, measured, pid)
+                    if ewhy:
+                        notes.append(f"pool {pid}: entrada antiga ({'; '.join(describe_state(e))}) descartada: {ewhy}")
+                    else:
+                        kept.append(dict(e))
+                if kept:
+                    pools[pid] = kept
     for pid, entry in sorted(new_pools.items()):
+        entry = {**entry, "measured_with": dict(measured)}
         entries = pools.setdefault(pid, [])
         idx = next((i for i, e in enumerate(entries) if same_power_key(e.get("power"), entry.get("power"))), None)
         if idx is None:
@@ -259,6 +286,12 @@ def merge_calibration(old: dict | None, machine: dict, new_pools: dict[str, dict
     doc = {"schema_version": FILE_SCHEMA_VERSION, "kind": "calibration", "scout_version": scout_version,
            "calibration_schema_version": CALIBRATION_SCHEMA_VERSION, "machine": dict(machine), "pools": pools}
     return doc, notes
+
+
+def describe_state(e: dict) -> list[str]:
+    from scout.calibration import describe_power
+
+    return [describe_power(e.get("power"))]
 
 
 # ------------------------------------------------------------------ escrita (§6)

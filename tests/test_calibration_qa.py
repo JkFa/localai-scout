@@ -46,7 +46,7 @@ def v(n):
 
 
 def ident(system, chosen=None):
-    """Identidade de §2 copiada à mão. `chosen`: o dict da GPU do pool gpu (ou None)."""
+    """Identidade de §2 copiada à mão, com kernel e camada 2 (cal_doc os separa). `chosen`: a GPU do pool gpu."""
     return {
         "platform": system["platform"],
         "os.arch": v(system["os"]["arch"]), "os.kernel": v(system["os"]["kernel"]),
@@ -67,7 +67,15 @@ def entry(power=AC, bw=20 * GB):
             "prefill_tokens_per_s": None}
 
 
-def cal_doc(machine, pools):
+MEASURED_WITH = ("os.kernel", "memory.speed_mts", "memory.channels")  # rev. 4: por entrada, não na máquina
+
+
+def cal_doc(ident_all, pools):
+    """`ident_all` traz os 11 campos copiados à mão; a camada 1 vai para `machine` e kernel e
+    camada 2 para o `measured_with` de cada entrada (calibration_store_spec.md §2 rev. 4)."""
+    machine = {k: v for k, v in ident_all.items() if k not in MEASURED_WITH}
+    mw = {k: ident_all[k] for k in MEASURED_WITH}
+    pools = {pid: [dict(e, measured_with=dict(mw)) for e in es] for pid, es in pools.items()}
     return {"schema_version": 1, "kind": "calibration", "scout_version": "0.0.0",
             "calibration_schema_version": 1, "machine": machine, "pools": pools}
 

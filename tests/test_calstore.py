@@ -10,19 +10,20 @@ import pytest
 from conftest import CATALOG_PATH, SYSTEM_PATHS, TUNING_PATH, assert_valid, deep, load
 from scout import bench as B
 from scout import calstore as S
-from scout.calibration import CalibrationInput, machine_identity
+from scout.calibration import CalibrationInput, machine_identity, measured_with
 from scout.cli import InputError, load_tuning, main, run_plan
 from scout.solver import Intent
 
 SYS = load(SYSTEM_PATHS["ddr5_64"])
 ID = machine_identity(SYS)
+MW = measured_with(SYS)
 AC = {"on_ac": True, "profile": "performance", "not_applicable": []}
 BAT = {"on_ac": False, "profile": "balanced", "not_applicable": []}
 H = Path("/home/u")
 
 
-def entry(power=AC, bw=20_000_000_000, tool="ollama"):
-    return {"bandwidth_bytes_per_s": bw, "overhead_s_per_token": 0.0, "form": "1p", "stable": True, "power": power,
+def entry(power=AC, bw=20_000_000_000, tool="ollama", mw=MW):
+    return {"measured_with": dict(mw), "bandwidth_bytes_per_s": bw, "overhead_s_per_token": 0.0, "form": "1p", "stable": True, "power": power,
             "tool": tool, "tool_version": "9.9.9", "date": "2000-01-01", "prefill_tokens_per_s": 10.0,
             "prefill_reason": None, "models": [{"id": "x/y", "architecture": None, "bytes": 2_000_000_000}],
             "fit": {"two_param": None, "one_param": {"bandwidth_bytes_per_s": bw, "overhead_s_per_token": 0.0},
@@ -30,7 +31,7 @@ def entry(power=AC, bw=20_000_000_000, tool="ollama"):
 
 
 def doc(pools=None, machine=ID):
-    d, _ = S.merge_calibration(None, machine, {}, "0.0.0")
+    d, _ = S.merge_calibration(None, machine, {}, "0.0.0", MW)
     d["pools"] = {k: (v if isinstance(v, list) else [v]) for k, v in (pools or {"cpu": entry()}).items()}
     return d
 
@@ -120,52 +121,64 @@ def test_write_refuses_invalid_doc(tmp_path):
 # ---- merge
 def test_merge_replaces_same_power_key_and_keeps_others():
     old = doc({"cpu": [entry(AC, 20), entry(BAT, 10)]})
-    new, notes = S.merge_calibration(old, ID, {"cpu": entry(AC, 30)}, "1")
+    new, notes = S.merge_calibration(old, ID, {"cpu": entry(AC, 30)}, "1", MW)
     assert [e["bandwidth_bytes_per_s"] for e in new["pools"]["cpu"]] == [30, 10]
     assert any("substituída" in n for n in notes)
-    new2, _ = S.merge_calibration(old, ID, {"cpu": entry({**AC, "profile": "power-saver"}, 5)}, "1")
+    new2, _ = S.merge_calibration(old, ID, {"cpu": entry({**AC, "profile": "power-saver"}, 5)}, "1", MW)
     assert len(new2["pools"]["cpu"]) == 3
     assert len(old["pools"]["cpu"]) == 2  # entrada não muta
 
 
 def test_merge_not_applicable_state_is_one_key():
     na = {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}
-    new, _ = S.merge_calibration(doc({"cpu": entry(na, 1)}), ID, {"cpu": entry(na, 2)}, "1")
+    new, _ = S.merge_calibration(doc({"cpu": entry(na, 1)}), ID, {"cpu": entry(na, 2)}, "1", MW)
     assert [e["bandwidth_bytes_per_s"] for e in new["pools"]["cpu"]] == [2]
     # conhecido de um lado e não aplicável do outro: chaves diferentes
-    new, _ = S.merge_calibration(doc({"cpu": entry(na, 1)}), ID, {"cpu": entry(AC, 2)}, "1")
+    new, _ = S.merge_calibration(doc({"cpu": entry(na, 1)}), ID, {"cpu": entry(AC, 2)}, "1", MW)
     assert len(new["pools"]["cpu"]) == 2
+
+
+def test_merge_stamps_new_entry_and_never_rewrites_old_measured_with():
+    old = doc({"cpu": entry(AC)})  # kernel 6.98, 5000 MT/s
+    cur_mw = {"os.kernel": "6.99.0-1-exemplo", "memory.speed_mts": None, "memory.channels": None}
+    new, _ = S.merge_calibration(old, ID, {"cpu": entry(BAT, 5, mw={})}, "1", cur_mw)
+    a, b = new["pools"]["cpu"]
+    assert a["measured_with"] == MW and b["measured_with"] == cur_mw
+    assert S.validate_doc(new) == []
 
 
 def test_merge_drops_old_pools_on_identity_change():
     old = doc({"cpu": entry(), "gpu": entry()})
     changed = {**ID, "cpu.model": "Outra CPU"}
-    new, notes = S.merge_calibration(old, changed, {"cpu": entry(BAT)}, "1")
+    new, notes = S.merge_calibration(old, changed, {"cpu": entry(BAT)}, "1", MW)
     assert len(new["pools"]["cpu"]) == 1 and "gpu" not in new["pools"]
     assert sum("descartado" in n for n in notes) == 2 and "cpu.model" in notes[0]
     assert new["machine"] == changed
 
 
-def test_merge_gpu_field_does_not_drop_cpu_pool_and_kernel_never_drops():
-    old_machine = {**ID, "gpu.name": "GPU A"}
-    old = doc({"cpu": entry(), "gpu": entry()}, old_machine)
-    cur = {**ID, "gpu.name": "GPU B", "os.kernel": "99.1.0"}
-    new, _ = S.merge_calibration(old, cur, {}, "1")
-    assert set(new["pools"]) == {"cpu"} and new["machine"]["os.kernel"] == "99.1.0"
+def test_merge_gpu_field_does_not_drop_cpu_pool():
+    old = doc({"cpu": entry(), "gpu": entry()}, {**ID, "gpu.name": "GPU A"})
+    new, _ = S.merge_calibration(old, {**ID, "gpu.name": "GPU B"}, {}, "1", MW)
+    assert set(new["pools"]) == {"cpu"}
 
 
-def test_merge_layer2_unknown_keeps_known_different_drops():
-    old = doc({"cpu": entry()}, {**ID, "memory.speed_mts": None})
-    new, _ = S.merge_calibration(old, {**ID, "memory.speed_mts": 5600}, {}, "1")
-    assert "cpu" in new["pools"]
-    old = doc({"cpu": entry()}, {**ID, "memory.speed_mts": 4800})
-    new, _ = S.merge_calibration(old, {**ID, "memory.speed_mts": 5600}, {}, "1")
-    assert "cpu" not in new["pools"]
+def test_merge_layer2_of_the_entry_decides_kernel_and_unknown_do_not():
+    old = doc({"cpu": [entry(AC, mw=MW), entry(BAT, mw={**MW, "memory.speed_mts": None})]})
+    # kernel diferente e MT/s igual ou desconhecido: nada cai
+    new, _ = S.merge_calibration(old, ID, {}, "1", {**MW, "os.kernel": "7.1.0"})
+    assert len(new["pools"]["cpu"]) == 2
+    # MT/s conhecido e diferente: cai só a entrada que o tinha conhecido
+    new, notes = S.merge_calibration(old, ID, {}, "1", {**MW, "memory.speed_mts": 4800})
+    assert len(new["pools"]["cpu"]) == 1 and new["pools"]["cpu"][0]["power"] == BAT and "memory.speed_mts" in notes[0]
+    # pool não-cpu: camada 2 não se aplica
+    old = doc({"unified": entry(AC)})
+    new, _ = S.merge_calibration(old, ID, {}, "1", {**MW, "memory.speed_mts": 4800})
+    assert "unified" in new["pools"]
 
 
 def test_merge_drops_everything_on_schema_version_change():
     old = {**doc(), "calibration_schema_version": 7}
-    new, notes = S.merge_calibration(old, ID, {"gpu": entry()}, "1")
+    new, notes = S.merge_calibration(old, ID, {"gpu": entry()}, "1", MW)
     assert set(new["pools"]) == {"gpu"} and "calibration_schema_version" in notes[0]
 
 
@@ -177,7 +190,6 @@ def test_identity_refusal_cases():
     assert S.identity_refusal({**ID, "gpu.name": None}, ID, {"cpu"}) is None  # gpu.* só vale no pool gpu
     assert S.identity_refusal(ID, {**ID, "cpu.model": "x"}, {"cpu"})[0] == "system_not_this_machine"
     assert S.identity_refusal(ID, None, {"cpu"})[0] == "system_not_this_machine"
-    assert S.identity_refusal({**ID, "memory.speed_mts": None}, {**ID, "memory.speed_mts": 1}, {"cpu"}) is None
     assert S.mixed_tools([("cpu", "ollama"), ("cpu", "llama-bench"), ("gpu", "ollama")]) == "cpu"
     assert S.mixed_tools([("cpu", "ollama"), ("cpu", None), ("gpu", "llama-bench")]) is None
 
@@ -261,3 +273,13 @@ def test_serve_gets_calibration_at_startup(tmp_path, fixed_env):
         assert s.calibration is cal
     finally:
         s.server_close()
+
+
+def test_plan_reads_engine_only_for_chosen_tools(capsys, tmp_path, fixed_env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(B, "engine_version", lambda t: calls.append(t) or "9.9.9")
+    d = doc({"cpu": entry(), "gpu": entry(tool="llama-bench")})  # sem GPU neste system: pool gpu ausente
+    p = tmp_path / "c.json"
+    p.write_text(S.serialize(d))
+    assert main(_plan_argv("--calibration", str(p))) == 0
+    assert calls == ["ollama"]

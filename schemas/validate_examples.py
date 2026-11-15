@@ -54,7 +54,7 @@ POSITIVE = [("system.schema.json", "system_rtx3060.json", sysx),
             ("calibration.schema.json", "calibration_example.json", calx),
             ("calibration.schema.json", "desktop: energia não aplicável, kernel null",
              set_path(set_path(calx, ["pools", "cpu", 0, "power"], {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}),
-                      ["machine", "os.kernel"], None))]
+                      ["pools", "cpu", 0, "measured_with", "os.kernel"], None))]
 RAM = ["memory", "ram_total_bytes", "value"]
 NEGATIVE = [
     ("system.schema.json", "ram_total como float", set_path(sysx, RAM, 17179869184.5)),
@@ -86,6 +86,9 @@ NEGATIVE = [
      set_path(calx, ["pools", "cpu", 0, "power"], {"on_ac": True, "profile": "performance"})),
     ("calibration.schema.json", "pool gpu sem gpu.name",
      set_path(set_path(calx, ["pools", "gpu"], calx["pools"]["cpu"]), ["machine", "gpu.name"], None)),
+    ("calibration.schema.json", "kernel no nível da máquina", set_path(calx, ["machine", "os.kernel"], "6.99.0-1")),
+    ("calibration.schema.json", "entrada sem measured_with",
+     {**calx, "pools": {"cpu": [{k: v for k, v in calx["pools"]["cpu"][0].items() if k != "measured_with"}]}}),
     ("calibration.schema.json", "pool como objeto, não lista", set_path(calx, ["pools", "cpu"], calx["pools"]["cpu"][0])),
     ("calibration.schema.json", "ferramentas misturadas", set_path(calx, ["pools", "cpu", 0, "tool"], "llama-bench+ollama")),
     ("calibration.schema.json", "ram_total como float", set_path(calx, ["machine", "memory.ram_total_bytes"], 7.5e9 + 0.5)),

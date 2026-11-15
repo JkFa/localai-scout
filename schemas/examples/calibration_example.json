@@ -7,11 +7,8 @@
     "gpu.backend": null,
     "gpu.name": null,
     "gpu.vram_total_bytes": null,
-    "memory.channels": 2,
     "memory.ram_total_bytes": 16000000000,
-    "memory.speed_mts": 5000,
     "os.arch": "x86_64",
-    "os.kernel": "9.9.0-exemplo",
     "platform": "linux"
   },
   "pools": {
@@ -28,6 +25,11 @@
           "two_param": null
         },
         "form": "1p",
+        "measured_with": {
+          "memory.channels": 2,
+          "memory.speed_mts": 5000,
+          "os.kernel": "6.99.0-1-exemplo"
+        },
         "models": [
           {
             "architecture": "exemplo",
@@ -59,6 +61,11 @@
           "two_param": null
         },
         "form": "1p",
+        "measured_with": {
+          "memory.channels": 2,
+          "memory.speed_mts": null,
+          "os.kernel": "6.99.0-1-exemplo"
+        },
         "models": [
           {
             "architecture": "exemplo",

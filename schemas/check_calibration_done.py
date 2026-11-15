@@ -8,7 +8,7 @@ Uso:
 `$T` contém o `cal.json` gravado por um `scout bench --run` real. O `system.json` base é
 `$T/system.json`, a menos que `--system` aponte outro.
 
-Sem rede e sem medir nada. Roda as 10 checagens chamando `scout plan --json` (a função
+Sem rede e sem medir nada. Roda as 11 checagens chamando `scout plan --json` (a função
 `scout.cli.main`, em processo) com variações de `cal.json` e `system.json` gravadas em `$T`
 (`cal_<tag>.json`, `system_<tag>.json`, `plan_<tag>.json`).
 
@@ -72,6 +72,7 @@ class Ctx:
         if not pools.get("cpu"):
             raise Setup("cal.json não tem entrada no pool cpu")
         self.entry = pools["cpu"][0]
+        self.mw = self.entry.get("measured_with") or {}
         self.power0 = copy.deepcopy(self.entry["power"])
         self.engines0 = {self.entry["tool"]: self.entry["tool_version"]}
         hit = [m for m in self.entry["models"] if m["id"] == self.model]
@@ -214,7 +215,7 @@ def check2(c: Ctx) -> list[str]:
 
 def check3(c: Ctx) -> list[str]:
     p: list[str] = []
-    stored = c.cal["machine"].get("memory.speed_mts")
+    stored = c.mw.get("memory.speed_mts")
     if stored is None:
         return ["pré-condição: cal.json sem memory.speed_mts, não há como divergir"]
     other_mts = 4800 if stored != 4800 else 3200
@@ -245,16 +246,15 @@ def _kernel_variants(stored: str) -> tuple[str, str]:
 
 def check5(c: Ctx) -> list[str]:
     p: list[str] = []
-    stored = c.cal["machine"].get("os.kernel")
+    stored = c.mw.get("os.kernel")
     if not isinstance(stored, str):
         return ["pré-condição: cal.json sem os.kernel"]
     patch, minor = _kernel_variants(stored)
     sys_p = c.sys_with(os__kernel=patch)
-    # a identidade gravada tem de bater com o system base; o kernel do base é o gravado
-    cal_p = c.cal_with(machine={**c.cal["machine"], "os.kernel": stored})
+    cal_p = c.cal  # o kernel gravado vive no measured_with da entrada (rev. 4)
     out = c.plan("kernel_patch", system=sys_p, cal=cal_p)
     pool_is(c, out, p, "applied", "patch: ")
-    line = next((m for m in c.echo(out)["match"] if m["field"] == "os.kernel"), None)
+    line = next((m for m in c.pool(out)["match"] if m["field"] == "os.kernel"), None)
     need(p, line is not None and line["effect"] == "none", f"patch: linha os.kernel={line}")
     need(p, "calibration_kernel_changed" not in c.codes(out), "patch: calibration_kernel_changed apareceu")
     need(p, c.cand(out)["confidence"] == "high", f"patch: confiança {c.cand(out)['confidence']!r}")
@@ -354,6 +354,38 @@ def check9(c: Ctx) -> list[str]:
     return p
 
 
+def check11(c: Ctx) -> list[str]:
+    """Merge (rev. 4): o measured_with da entrada antiga sobrevive a um segundo bench com outro kernel e MT/s."""
+    from scout import calstore
+    from scout.calibration import measured_with
+
+    p: list[str] = []
+    old_mw = {"os.kernel": "6.98.0-qa-old", "memory.speed_mts": None, "memory.channels": None}
+    old_entry = copy.deepcopy(c.entry)
+    old_entry["measured_with"] = old_mw
+    old = c.cal_with(pools={"cpu": [old_entry]})
+    now = measured_with(c.sys_with(os__kernel="6.99.0-qa-new"))
+    now["memory.speed_mts"] = now["memory.speed_mts"] or 4000
+    now["memory.channels"] = now["memory.channels"] or 2
+    new_entry = copy.deepcopy(c.entry)
+    new_entry["power"] = copy.deepcopy(SYNTH_STATE)
+    merged, _ = calstore.merge_calibration(old, c.cal["machine"], {"cpu": new_entry}, "0.0.0", now)
+    entries = merged["pools"]["cpu"]
+    need(p, len(entries) == 2, f"merge deixou {len(entries)} entradas, esperado 2")
+    kept = next((e for e in entries if e["power"] == c.power0), None)
+    need(p, kept is not None and kept["measured_with"] == old_mw, f"measured_with antigo reescrito: {kept and kept['measured_with']}")
+    need(p, any(e["measured_with"] == now for e in entries), "entrada nova sem o measured_with do bench atual")
+    sys_now = c.sys_with(os__kernel="6.99.0-qa-new", memory__speed_mts=now["memory.speed_mts"],
+                         memory__channels=now["memory.channels"])
+    out = c.plan("merge_rev4", system=sys_now, cal=merged)
+    pool_is(c, out, p, "applied")
+    need(p, c.pool(out)["power_match"] == "same", f"power_match={c.pool(out)['power_match']!r}")
+    need(p, "calibration_kernel_changed" in c.codes(out), f"avisos {c.codes(out)}")
+    need(p, "calibration_memory_unverified" in c.codes(out), f"avisos {c.codes(out)}")
+    need(p, c.cand(out)["confidence"] != "high", f"confiança {c.cand(out)['confidence']!r}, nunca high")
+    return p
+
+
 def check10(c: Ctx) -> list[str]:
     p: list[str] = []
     out = c.plan("disabled", no_cal=True)
@@ -373,6 +405,7 @@ CHECKS: list[tuple[int, str, Callable[[Ctx], list[str]]]] = [
     (8, "energia não aplicável: same e high; profile null fora de not_applicable: unknown e medium", check8),
     (9, "calibration_schema_version 99: discarded e calibration_schema_outdated", check9),
     (10, "--no-calibration: disabled e sem inputs.power", check10),
+    (11, "merge: measured_with antigo preservado; plan no estado dele não sai high", check11),
 ]
 
 

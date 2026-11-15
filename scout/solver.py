@@ -70,6 +70,7 @@ class Pool:
     # e os motivos de confiança que ela passa aos candidatos. None -> eta.
     cal: dict | None = None
     cal_reasons: frozenset[str] = frozenset()
+    cal_prefill: tuple[dict, ...] = ()  # entradas cujo prefill vale para o TTFT (§4 rev. 4)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -718,15 +719,24 @@ def _ttft(m: dict, a: Attempt, intent: Intent) -> float | None:
     calibrado, com prefill_tokens_per_s (só gravado se estável); e a
     calibração medida com UM modelo, que é este. Prefill é limitado por
     computação e escala com o modelo: o número de outro modelo não se aplica.
+    Fora do casamento exato de energia, usa o MENOR prefill entre as entradas
+    elegíveis (calibration_store_spec.md §4 rev. 4), cada uma também medida
+    só com este modelo; a entrada escolhida precisa ter sido medida com ele.
     """
     if intent.prompt_tokens is None or a.placement == "hybrid" or len(a.pools_used) != 1:
         return None
-    cal = a.pools_used[0].cal or {}
-    prefill = cal.get("prefill_tokens_per_s")
-    models = [x.get("id") for x in cal.get("models") or [] if isinstance(x, dict)]
-    if not isinstance(prefill, (int, float)) or isinstance(prefill, bool) or prefill <= 0 or models != [m["id"]]:
+    pool = a.pools_used[0]
+
+    def only_this_model(e: dict) -> bool:
+        return [x.get("id") for x in e.get("models") or [] if isinstance(x, dict)] == [m["id"]]
+
+    if pool.cal is None or not only_this_model(pool.cal):
         return None
-    return round(intent.prompt_tokens / prefill, 2)
+    prefills = [e.get("prefill_tokens_per_s") for e in pool.cal_prefill if only_this_model(e)]
+    prefills = [x for x in prefills if isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0]
+    if not prefills:
+        return None
+    return round(intent.prompt_tokens / min(prefills), 2)
 
 
 def _quality_alternative(chosen: dict, pool: list[dict]) -> dict | None:
@@ -842,7 +852,7 @@ def _attach_calibration(pool_list: list[Pool], decisions: dict) -> list[Pool]:
         if d is None or d.entry is None:
             out.append(p)
         else:
-            out.append(replace(p, cal=d.entry, cal_reasons=d.reasons))
+            out.append(replace(p, cal=d.entry, cal_reasons=d.reasons, cal_prefill=d.prefill_entries))
     return out
 
 

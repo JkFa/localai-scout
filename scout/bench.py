@@ -129,15 +129,18 @@ def _read_power_linux(sysfs: str, which: Callable[[str], str | None]) -> dict:
     except OSError:
         names = None  # não deu para listar: desconhecido, não "sem bateria"
     if names is not None:
-        bat_present = any(n.startswith("BAT") for n in names)
+        sup: list[dict[str, str | None]] = []
+        for n in names:
+            d: dict[str, str | None] = {}
+            for k in ("type", "status", "online", "scope"):
+                txt = C.read_text(f"{root}/{n}/{k}", probes, limit=32)
+                d[k] = txt.strip() if txt is not None else None
+            sup.append(d)
+        # Bateria do SISTEMA pelo type (Asahi: macsmc-battery); scope Device é periférico (mouse, fone).
+        bat_present = any(d["type"] == "Battery" and d["scope"] != "Device" for d in sup)
+        if not bat_present and any(d["type"] is None for d in sup):
+            bat_present = None  # entrada ilegível pode ser a bateria: desconhecido, não "sem bateria"
         if bat_present:
-            sup: list[dict[str, str | None]] = []
-            for n in names:
-                d: dict[str, str | None] = {}
-                for k in ("type", "status", "online", "scope"):
-                    txt = C.read_text(f"{root}/{n}/{k}", probes, limit=32)
-                    d[k] = txt.strip() if txt is not None else None
-                sup.append(d)
             on_battery = C.P.parse_power(sup)[1]
     pp_path = f"{sysfs}/firmware/acpi/platform_profile"
     has_file = os.path.exists(pp_path)
@@ -468,11 +471,13 @@ def llama_bench_round(gguf: str, target: Target) -> tuple[Round, str | None]:
 
 def _ollama_request(method: str, path: str, body: dict | None = None, timeout: float = 600.0) -> dict:
     """Só 127.0.0.1:11434."""
+    # Sem proxy do ambiente: com http_proxy e sem no_proxy, o urllib mandaria 127.0.0.1 ao proxy.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     req = urllib.request.Request(OLLAMA_URL + path, method=method,
                                  data=None if body is None else json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             doc = json.loads(resp.read())
     except (urllib.error.URLError, OSError, ValueError) as e:
         raise BenchError("ollama_unreachable", f"API local do Ollama indisponível ({path})") from e

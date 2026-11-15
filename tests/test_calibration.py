@@ -24,16 +24,23 @@ ENG = {"ollama": "9.9.9"}
 
 
 def entry(models=("test/dense-7b",), stable=True, power=AC, bw=20_000_000_000, ovh=0.002, prefill=None,
-          date="2000-01-01", version="9.9.9"):
-    return {"bandwidth_bytes_per_s": bw, "overhead_s_per_token": ovh, "form": "2p" if ovh else "1p",
+          date="2000-01-01", version="9.9.9", mw=None):
+    """mw: measured_with explícito; None = o do system do plan (doc() preenche)."""
+    return {**({"measured_with": dict(mw)} if mw is not None else {}),"bandwidth_bytes_per_s": bw, "overhead_s_per_token": ovh, "form": "2p" if ovh else "1p",
             "stable": stable, "power": copy.deepcopy(power), "tool": "ollama", "tool_version": version,
             "date": date, "models": [{"id": m, "architecture": "testarch", "bytes": 1} for m in models],
             "prefill_tokens_per_s": prefill}
 
 
-def doc(system: dict, pools: dict, **machine) -> dict:
+def doc(system: dict, pools: dict, **fields) -> dict:
+    """Campos de camada 1 vão para `machine`; kernel e camada 2 para o
+    measured_with de cada entrada que não trouxe o seu."""
     m = C.machine_identity(system)
-    m.update(machine)
+    m.update({k: v for k, v in fields.items() if k in C.MACHINE_FIELDS})
+    mw = dict(C.measured_with(system), **{k: v for k, v in fields.items() if k in C.MEASURED_WITH_FIELDS})
+    assert set(fields) <= set(C.MACHINE_FIELDS) | set(C.MEASURED_WITH_FIELDS)
+    pools = {pid: [e if "measured_with" in e else dict(e, measured_with=dict(mw)) for e in es]
+             for pid, es in pools.items()}
     return {"schema_version": 1, "kind": "calibration", "scout_version": "0.0.0",
             "calibration_schema_version": C.CALIBRATION_SCHEMA_VERSION, "machine": m, "pools": pools}
 
@@ -266,10 +273,12 @@ def test_layer2_different_discards(systems, catalog, tuning):
 
 def test_layer2_not_applicable_to_unified_pool(systems, catalog, tuning):
     d = doc(systems["apple24"], {"unified": [entry()]})
-    assert d["machine"]["memory.channels"] is None and d["machine"]["gpu.name"] is None
+    assert d["pools"]["unified"][0]["measured_with"]["memory.channels"] is None and d["machine"]["gpu.name"] is None
     out = _plan(systems, catalog, tuning, d=d, sysname="apple24")
     pc = out["inputs"]["calibration"]["pools"]["unified"]
     assert pc["status"] == "applied" and pc["reasons"] == []
+    ch = next(ln for ln in pc["match"] if ln["field"] == "memory.channels")
+    assert (ch["result"], ch["effect"]) == ("unknown", "none")  # não aplicável: sem teto
     assert "calibration_memory_unverified" not in _codes(out)
 
 
@@ -299,15 +308,17 @@ def test_pool_absent(systems, catalog, tuning):
 def test_machine_identity_follows_solver_gpu(systems):
     m = C.machine_identity(systems["rtx3060"])
     assert m["gpu.name"] == "FIXTURE NVIDIA 12GB (perfil 2)" and m["gpu.backend"] == "cuda"
-    assert m["platform"] == "linux" and m["os.kernel"] == "6.8.0-fixture" and m["memory.speed_mts"] == 3200
-    assert set(m) == {f for f, _, _ in C.MATCH_FIELDS}
+    assert m["platform"] == "linux" and m["cpu.cores_physical"] == 6
+    assert tuple(m) == C.MACHINE_FIELDS and "os.kernel" not in m and "memory.speed_mts" not in m
+    assert C.measured_with(systems["rtx3060"]) == {"os.kernel": "6.8.0-fixture", "memory.speed_mts": 3200,
+                                                   "memory.channels": 2}
     assert C.machine_identity(systems["apple24"])["gpu.name"] is None  # unificada: sem pool gpu
 
 
 # ---------------------------------------------------------------- software (§3)
 
 
-@pytest.mark.parametrize("k,expected", [("7.0.0-43-generic", "7.0"), ("6.8", "6.8"), ("24.0.0-fixture", "24.0"),
+@pytest.mark.parametrize("k,expected", [("6.99.0-1-exemplo", "6.99"), ("6.8", "6.8"), ("24.0.0-fixture", "24.0"),
                                         ("10.12.3", "10.12"), ("rolling", "rolling"), ("7", "7")])
 def test_kernel_key(k, expected):
     assert C.kernel_key(k) == expected
@@ -324,7 +335,8 @@ def test_kernel_patch_change_is_noop_and_minor_change_downgrades(systems, catalo
     w = next(w for w in out["warnings"] if w["code"] == "calibration_kernel_changed")
     assert w["message"] == ("A calibração foi medida com o kernel 6.5; agora é 6.8. "
                             "Rode `scout bench --run` para recalibrar.")
-    line = next(ln for ln in out["inputs"]["calibration"]["match"] if ln["field"] == "os.kernel")
+    assert all(ln["layer"] == 1 for ln in out["inputs"]["calibration"]["match"])
+    line = next(ln for ln in out["inputs"]["calibration"]["pools"]["cpu"]["match"] if ln["field"] == "os.kernel")
     assert (line["layer"], line["effect"]) == ("software", "downgrade")
     d = doc(systems["ddr5_64"], {"cpu": [entry()]}, **{"os.kernel": None})
     c = _c(_plan(systems, catalog, tuning, d=d), "test/dense-7b")
@@ -441,3 +453,72 @@ def test_within_5pct_is_integer_and_symmetric():
     assert C.within_5pct(100, 95) and C.within_5pct(95, 100) and not C.within_5pct(100, 94)
     assert C.compare_field("memory.ram_total_bytes", 16_000_000_000, 16_700_000_000) == "equal"
     assert C.compare_field("cpu.cores_physical", 8, None) == "unknown"
+
+
+# ---------------------------------------------------------------- rev. 4: measured_with por entrada
+
+
+def _with_kernel(systems, k):
+    s = copy.deepcopy(systems)
+    s["ddr5_64"]["os"]["kernel"]["value"] = k
+    return s
+
+
+def test_finding1_old_entry_keeps_its_own_kernel_and_unverified_ram(systems, catalog, tuning):
+    s = _with_kernel(systems, "6.99.0-3-exemplo")
+    old = entry(power=AC, mw={"os.kernel": "6.98.0-1-exemplo", "memory.speed_mts": None, "memory.channels": 2})
+    new = entry(power=BATT, mw={"os.kernel": "6.99.0-1-exemplo", "memory.speed_mts": 5600, "memory.channels": 2})
+    d = doc(s["ddr5_64"], {"cpu": [old, new]})
+    out = _plan(s, catalog, tuning, d=d)  # no estado da entrada antiga (tomada)
+    pc = out["inputs"]["calibration"]["pools"]["cpu"]
+    assert pc["power_match"] == "same" and pc["calibration"]["measured_with"]["os.kernel"] == "6.98.0-1-exemplo"
+    c = _c(out, "test/dense-7b")
+    assert {"calibration_kernel_changed", "calibration_memory_unverified"} <= set(c["confidence_reasons"])
+    assert c["confidence"] == "low"  # teto medium, depois um nível abaixo; nunca high
+    assert {ln["field"]: ln["effect"] for ln in pc["match"]} == {
+        "os.kernel": "downgrade", "memory.speed_mts": "cap_medium", "memory.channels": "none"}
+    # no estado da entrada nova: tudo confere
+    c = _c(_plan(s, catalog, tuning, d=d, power=BATT), "test/dense-7b")
+    assert c["confidence"] == "high"
+
+
+def test_layer2_different_entry_is_ineligible_before_power_choice(systems, catalog, tuning):
+    other_ram = {"os.kernel": "6.8.0-fixture", "memory.speed_mts": 4800, "memory.channels": 2}
+    d = doc(systems["ddr5_64"], {"cpu": [entry(power=AC, bw=5_000_000_000, mw=other_ram),
+                                         entry(power=BATT, bw=10_000_000_000)]})
+    out = _plan(systems, catalog, tuning, d=d)  # na tomada: a única que casa é inelegível
+    pc = out["inputs"]["calibration"]["pools"]["cpu"]
+    assert pc["status"] == "applied" and pc["power_match"] == "other_state"
+    assert pc["calibration"]["bandwidth_bytes_per_s"] == 10_000_000_000
+    assert pc["available_power"] == [AC, BATT]
+
+
+def test_ttft_outside_exact_power_match_uses_lowest_eligible_prefill(systems, catalog, tuning):
+    other_ram = {"os.kernel": "6.8.0-fixture", "memory.speed_mts": 4800, "memory.channels": 2}
+    pools = {"cpu": [entry(power=AC, bw=10_000_000_000, prefill=40.0),
+                     entry(power=BATT, bw=30_000_000_000, prefill=20.0),
+                     entry(power={"on_ac": False, "profile": "power-saver", "not_applicable": []},
+                           bw=40_000_000_000, prefill=5.0, mw=other_ram)]}  # inelegível: não conta
+    d = doc(systems["ddr5_64"], pools)
+    out = _plan(systems, catalog, tuning, d=d, prompt_tokens=400,
+                power={"on_ac": False, "profile": "performance", "not_applicable": []})
+    pc = out["inputs"]["calibration"]["pools"]["cpu"]
+    assert pc["power_match"] == "other_state" and pc["calibration"]["prefill_tokens_per_s"] == 40.0
+    assert _c(out, "test/dense-7b")["ttft_s_est"] == pytest.approx(400 / 20.0)
+    out = _plan(systems, catalog, tuning, d=d, prompt_tokens=400)  # casamento exato: a da entrada
+    assert _c(out, "test/dense-7b")["ttft_s_est"] == pytest.approx(400 / 40.0)
+    out = _plan(systems, catalog, tuning, d=d, prompt_tokens=400, power=None)  # unknown: também o menor
+    assert out["inputs"]["calibration"]["pools"]["cpu"]["power_match"] == "unknown"
+    assert _c(out, "test/dense-7b")["ttft_s_est"] == pytest.approx(400 / 20.0)
+
+
+def test_chosen_tools_only_from_applicable_pools(systems):
+    s = systems["rtx3060"]
+    cpu = entry()
+    gpu = dict(entry(), tool="llama-bench")
+    assert C.chosen_tools(doc(s, {"cpu": [cpu], "gpu": [gpu]}), s, AC) == {"ollama", "llama-bench"}
+    assert C.chosen_tools(doc(s, {"cpu": [cpu], "gpu": [gpu]}, **{"gpu.name": "OUTRA"}), s, AC) == {"ollama"}
+    assert C.chosen_tools(doc(s, {"gpu": [gpu]}), systems["ddr5_64"], AC) == set()  # pool ausente
+    # entre estados, só a escolhida conta
+    batt = dict(entry(power=BATT), tool="llama-bench")
+    assert C.chosen_tools(doc(s, {"cpu": [cpu, batt]}), s, BATT) == {"llama-bench"}
