@@ -166,7 +166,8 @@ def parse_dmidecode(text: str) -> dict[str, Any]:
             cur.setdefault(k.strip(), v.strip())
     pop = [d for d in devices if re.match(r"^\d+\s*(MB|GB|TB|kB)", d.get("Size", ""))]
     if not pop:
-        return {"populated": 0 if devices else None, "type": None, "speed_mts": None, "channels": None}
+        return {"populated": 0 if devices else None, "type": None, "speed_mts": None, "channels": None,
+                "data_width_bits": None}
     types = {d.get("Type", "") for d in pop} - _DMI_BAD
     type_ = next(iter(types)) if len(types) == 1 else None
     speeds: set[int] = set()
@@ -185,7 +186,9 @@ def parse_dmidecode(text: str) -> dict[str, Any]:
             c = re.search(r"controller\s*([a-z0-9]+)", loc, re.I)  # Controller0-ChannelA != Controller1-ChannelA
             chans.add(((c.group(1).upper() if c else ""), m.group(1).upper()))
     channels = len(chans) if chans else len(pop)
-    return {"populated": len(pop), "type": type_,
+    widths = {_int(re.sub(r"\D", "", d.get("Data Width", "")) or None) for d in pop}  # Data Width, nunca Total Width (ECC)
+    width = next(iter(widths)) if len(widths) == 1 else None
+    return {"populated": len(pop), "type": type_, "data_width_bits": width,
             "speed_mts": min(speeds) if speeds else None,  # o mais lento limita o barramento
             "channels": channels, "channels_exact": bool(chans)}
 
@@ -316,15 +319,23 @@ def user_visible_mount(m: str) -> bool:
 
 
 def parse_power(supplies: list[dict[str, str | None]]) -> tuple[bool, bool | None]:
-    """[{type,status}] de /sys/class/power_supply -> (has_battery, on_battery)."""
-    bats = [s for s in supplies if (s.get("type") or "").strip() == "Battery"]
+    """[{type,status,online,scope}] de /sys/class/power_supply -> (has_battery, on_battery).
+    A tomada vem de `online` dos supplies Mains/USB*, nunca do status da bateria sozinho:
+    qualquer um online=1 => AC; todos online=0 => bateria; sem Mains legível, só `Discharging` prova bateria."""
+    def t(s: dict) -> str:
+        return (s.get("type") or "").strip()
+    bats = [s for s in supplies if t(s) == "Battery" and (s.get("scope") or "").strip() != "Device"]
     if not bats:
         return False, False
     states = [(s.get("status") or "").strip() for s in bats]
-    if any(s == "Discharging" for s in states):
-        return True, True
-    if all(s in ("Charging", "Full", "Not charging") for s in states):
+    online = [(s.get("online") or "").strip() for s in supplies if t(s) == "Mains" or t(s).startswith("USB")]
+    online = [o for o in online if o in ("0", "1")]
+    if "1" in online:
         return True, False
+    if online:  # todos offline
+        return True, (None if "Charging" in states else True)
+    if "Discharging" in states:
+        return True, True
     return True, None
 
 
@@ -347,20 +358,40 @@ _RANK = {"low": 0, "medium": 1, "high": 2}
 
 
 def ram_bandwidth(mts: int | None, channels: int | None, mem_type: str | None,
-                  table: dict | None, mts_conf: str = "medium",
-                  channels_conf: str = "medium") -> tuple[int | None, str, str, str | None]:
-    """-> (bytes/s, source, confidence, note). MT/s*canais*8 se ambos; senão tabela por geração; senão None.
-    A confiança da banda nunca passa da menor entre MT/s e canais (e nunca de medium)."""
+                  table: dict | None, mts_conf: str = "medium", channels_conf: str = "medium",
+                  data_width_bits: int | None = None) -> tuple[int | None, str, str, str | None]:
+    """-> (bytes/s, source, confidence, note).
+    banda = MT/s * canais * data_width_bits / 8 (Data Width do dmidecode, nunca Total Width). Largura fora de {32, 64}
+    ou ausente: assume 64 e rebaixa a confiança a low. Tipo de memória não entra na fórmula.
+    Sem MT/s ou canais: tabela por geração (low); senão None. Confiança nunca passa da menor entre as entradas (teto medium)."""
     if mts and channels:
-        conf = min(mts_conf, channels_conf, "medium", key=_RANK.__getitem__)
-        return (mts * channels * 8 * 10**6, "estimate:mts*channels*8", conf,
-                f"{mts} MT/s * {channels} canais * 8 bytes")
+        width, wconf = (data_width_bits, "medium") if data_width_bits in (32, 64) else (64, "low")
+        conf = min(mts_conf, channels_conf, wconf, "medium", key=_RANK.__getitem__)
+        note = f"{mts} MT/s * {channels} canais * {width} bits / 8"
+        if wconf == "low":
+            note += "; Data Width ausente ou fora de {32, 64}: assumido 64"
+        return (mts * channels * width // 8 * 10**6, "estimate:mts*channels*data_width/8", conf, note)
     t = ((table or {}).get("ram") or {}).get((mem_type or "").upper())
     if t and isinstance(t.get("bytes_per_s"), int):
         return (t["bytes_per_s"], "estimate:table:data/bandwidth_tables.json", "low",
                 "dado de referência da geração, não detectado; " + str(t.get("note", "")))
     why = "tipo de memória e MT/s não detectados" if not mem_type else f"geração {mem_type} fora da tabela"
     return None, f"none: {why}", "low", None
+
+
+_STD_MAX_MTS = {"DDR3": 2133, "DDR4": 3200}
+
+
+def type_divergence(mem_type: str | None, mts: int | None, data_width_bits: int | None) -> str | None:
+    """Tipo reportado incompatível com MT/s/largura (ex.: DDR4 a 5500 MT/s em canal de 32 bits = padrão LPDDR5)."""
+    t = (mem_type or "").upper()
+    if t not in _STD_MAX_MTS:
+        return None
+    if mts and mts > _STD_MAX_MTS[t]:
+        return f"{t} reportado, mas {mts} MT/s excede o padrão {t} ({_STD_MAX_MTS[t]})"
+    if data_width_bits == 32:
+        return f"{t} reportado, mas Data Width de 32 bits não é típico de {t} (DIMM de 64 bits)"
+    return None
 
 
 def hybrid_by_freq(rows: list[tuple[int, int, float | None]]) -> tuple[str, tuple[int, int] | None, float | None]:

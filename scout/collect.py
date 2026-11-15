@@ -266,7 +266,9 @@ def _memory_rest(mem: dict, dmi: dict | None, unified: bool | None, platform_not
     t = dmi.get("type") if dmi else None
     mts = dmi.get("speed_mts") if dmi else None
     ch = dmi.get("channels") if dmi else None
-    mem["type"] = field(t, dmi_src, "medium") if t else missing(why)
+    div = P.type_divergence(t, mts, dmi.get("data_width_bits") if dmi else None)
+    mem["type"] = (field(t, dmi_src + " (tipo divergente)", "medium", f"{div}; valor mantido como reportado") if div
+                   else field(t, dmi_src, "medium")) if t else missing(why)
     mem["speed_mts"] = field(mts, dmi_src, "medium") if mts else missing(why)
     if ch:
         exact = dmi.get("channels_exact")
@@ -275,7 +277,8 @@ def _memory_rest(mem: dict, dmi: dict | None, unified: bool | None, platform_not
     else:
         mem["channels"] = missing(why)
     ch_conf = "low" if not (dmi and dmi.get("channels_exact")) else "medium"
-    bw, src, conf, note = P.ram_bandwidth(mts, ch, t, _load_bw_table(), "medium", ch_conf)
+    bw, src, conf, note = P.ram_bandwidth(mts, ch, t, _load_bw_table(), "medium", ch_conf,
+                                        dmi.get("data_width_bits") if dmi else None)
     mem["bandwidth_bytes_per_s"] = field(bw, src, conf, note)
     mem["unified"] = field(unified, platform_note, "high") if unified is not None else missing("plataforma desconhecida")
     return mem
@@ -467,7 +470,7 @@ def collect_power(system: str, probes: Probes) -> dict:
         sup = []
         for n in names:
             d: dict[str, str | None] = {}
-            for k in ("type", "status"):
+            for k in ("type", "status", "online", "scope"):
                 try:
                     with open(f"{root}/{n}/{k}", encoding="utf-8") as fh:
                         d[k] = fh.read(32).strip()

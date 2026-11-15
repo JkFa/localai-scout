@@ -603,3 +603,16 @@ interpretação.
 - iGPU: `bandwidth_bytes_per_s` = banda da RAM do sistema, mesma confiança, `source: "igpu_shares_ram"`; RAM null => null.
   Detecção: AMD com um único cartão em /sys/class/drm sem `mem_info_vram_vendor` (amdgpu só o expõe em GPU discreta; na
   Mendocino desta máquina o arquivo não existe). Heurística: com mais de um cartão AMD não classifica (trata como discreta).
+
+## 2026-11-15 — Banda de RAM com Data Width e energia (coletor)
+
+- **Banda de RAM.** `MT/s * canais * data_width_bits / 8`. Usa "Data Width" do dmidecode (nunca "Total Width", que inclui
+  ECC). Largura ausente, fora de {32, 64} ou diferente entre módulos: assume 64 e a confiança cai a low. Canais por contagem
+  de módulos continuam low. Tipo não entra na fórmula; divergência (DDR3/DDR4 acima do máximo JEDEC de MT/s, ou largura de
+  32 bits) vai em `source`/`note` do campo `type`, valor mantido. Caso real: 2 canais de 32 bits a 5500 MT/s = 44 GB/s
+  (a máquina do humano reporta "DDR4", padrão de LPDDR5). PROMPT.md M2 atualizado. `mem.txt` da raiz não vai a tests/ (tem seriais).
+- **Energia.** Causa do defeito: `parse_power` nunca lia `online` dos supplies Mains/USB; concluía "na tomada" do status da
+  bateria ("Full", "Not charging", "Charging"), que firmware/limite de carga reportam mesmo na bateria. Agora: qualquer
+  Mains/USB* `online=1` => AC; todos `online=0` => bateria (contradição com bateria `Charging` => null); sem Mains legível,
+  só `Discharging` prova bateria, o resto é null. Baterias com `scope=Device` (periféricos) são ignoradas. Lido a cada coleta,
+  sem cache. Não reproduzi o defeito original (esta máquina estava na tomada); a causa vem da análise do código.

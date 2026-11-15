@@ -303,8 +303,12 @@ Em Linux:
   entrar em n_threads. Flags de ISA: avx2, avx512, amx, neon, sve
 - RAM: /proc/meminfo. Tipo, MT/s e canais via dmidecode. dmidecode exige root:
   tente sem sudo, NUNCA peça senha, e degrade para confidence "low"
-- Banda de memória: se não detectada, estime MT/s * canais * 8 e marque como
-  estimada. Sem MT/s, use a tabela em data/bandwidth_tables.json por geração
+- Banda de memória: se não detectada, estime MT/s * canais * data_width_bits / 8
+  (Data Width do dmidecode, nunca Total Width, que inclui ECC) e marque como
+  estimada. Data Width ausente ou fora de {32, 64}: assuma 64 e rebaixe para
+  confidence "low". O tipo de memória não entra na fórmula; se divergir do que
+  MT/s e largura indicam, registre a divergência em source/note do tipo sem
+  trocar o valor. Sem MT/s, use a tabela em data/bandwidth_tables.json por geração
 - GPU: nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version,
   compute_cap. rocm-smi para AMD. /sys/class/drm/card* como último recurso.
   Derive bf16 (cc >= 8.0), fp8 (cc >= 8.9) e flash attention
