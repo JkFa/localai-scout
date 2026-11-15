@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "kind": "catalog",
+  "fixture": {
+    "synthetic": true,
+    "description": "Modelos FICTÍCIOS (org 'test/', URLs em example.invalid) para a suíte do solver. Não correspondem a nenhum modelo real."
+  },
+  "models": [
+    {
+      "id": "test/tiny-1b",
+      "source_url": "https://example.invalid/test/tiny-1b",
+      "gguf_repo": "test/tiny-1b-gguf",
+      "license": "test-noncommercial",
+      "license_source": "https://example.invalid/test/tiny-1b",
+      "commercial_ok": false,
+      "tasks": [
+        "chat"
+      ],
+      "params_total": 1200000000,
+      "params_active": 1200000000,
+      "n_layers": 16,
+      "n_heads": 16,
+      "n_kv_heads": 8,
+      "head_dim": 64,
+      "ctx_max": 32768,
+      "kv_model": "standard",
+      "quants": [
+        {
+          "format": "GGUF",
+          "name": "Q8_0",
+          "bpw": 8.5,
+          "bpw_source": "table",
+          "file_bytes": null,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q6_K",
+          "bpw": 6.56,
+          "bpw_source": "file_bytes",
+          "file_bytes": 984000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q4_K_M",
+          "bpw": 4.9,
+          "bpw_source": "file_bytes",
+          "file_bytes": 735000000,
+          "file_url": null
+        }
+      ],
+      "verified_at": "2026-11-15",
+      "complete": true,
+      "incomplete_fields": []
+    },
+    {
+      "id": "test/dense-7b",
+      "source_url": "https://example.invalid/test/dense-7b",
+      "gguf_repo": "test/dense-7b-gguf",
+      "license": "apache-2.0",
+      "license_source": "https://example.invalid/test/dense-7b",
+      "commercial_ok": true,
+      "tasks": [
+        "chat",
+        "code"
+      ],
+      "params_total": 7200000000,
+      "params_active": 7200000000,
+      "n_layers": 32,
+      "n_heads": 32,
+      "n_kv_heads": 8,
+      "head_dim": 128,
+      "ctx_max": 32768,
+      "kv_model": "standard",
+      "quants": [
+        {
+          "format": "GGUF",
+          "name": "Q8_0",
+          "bpw": 8.5,
+          "bpw_source": "file_bytes",
+          "file_bytes": 7650000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q6_K",
+          "bpw": 6.56,
+          "bpw_source": "file_bytes",
+          "file_bytes": 5904000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q4_K_M",
+          "bpw": 4.9,
+          "bpw_source": "file_bytes",
+          "file_bytes": 4410000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q3_K_M",
+          "bpw": 3.9,
+          "bpw_source": "file_bytes",
+          "file_bytes": 3510000000,
+          "file_url": null
+        }
+      ],
+      "verified_at": "2026-11-15",
+      "complete": true,
+      "incomplete_fields": []
+    },
+    {
+      "id": "test/moe-30b-a3b",
+      "source_url": "https://example.invalid/test/moe-30b-a3b",
+      "gguf_repo": "test/moe-30b-a3b-gguf",
+      "license": "apache-2.0",
+      "license_source": "https://example.invalid/test/moe-30b-a3b",
+      "commercial_ok": true,
+      "tasks": [
+        "chat",
+        "code"
+      ],
+      "params_total": 30000000000,
+      "params_active": 3000000000,
+      "n_layers": 48,
+      "n_heads": 32,
+      "n_kv_heads": 4,
+      "head_dim": 128,
+      "ctx_max": 32768,
+      "kv_model": "standard",
+      "quants": [
+        {
+          "format": "GGUF",
+          "name": "Q6_K",
+          "bpw": 6.56,
+          "bpw_source": "file_bytes",
+          "file_bytes": 24600000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q4_K_M",
+          "bpw": 4.88,
+          "bpw_source": "file_bytes",
+          "file_bytes": 18300000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q3_K_M",
+          "bpw": 3.9733,
+          "bpw_source": "file_bytes",
+          "file_bytes": 14900000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q2_K",
+          "bpw": 2.96,
+          "bpw_source": "file_bytes",
+          "file_bytes": 11100000000,
+          "file_url": null
+        }
+      ],
+      "verified_at": "2026-11-15",
+      "complete": true,
+      "incomplete_fields": []
+    },
+    {
+      "id": "test/embed-110m",
+      "source_url": "https://example.invalid/test/embed-110m",
+      "gguf_repo": "test/embed-110m-gguf",
+      "license": "mit",
+      "license_source": "https://example.invalid/test/embed-110m",
+      "commercial_ok": true,
+      "tasks": [
+        "embeddings"
+      ],
+      "params_total": 110000000,
+      "params_active": 110000000,
+      "n_layers": 12,
+      "n_heads": 12,
+      "n_kv_heads": 12,
+      "head_dim": 64,
+      "ctx_max": 8192,
+      "kv_model": "standard",
+      "quants": [
+        {
+          "format": "GGUF",
+          "name": "F16",
+          "bpw": 16.0,
+          "bpw_source": "file_bytes",
+          "file_bytes": 220000000,
+          "file_url": null
+        },
+        {
+          "format": "GGUF",
+          "name": "Q8_0",
+          "bpw": 8.5,
+          "bpw_source": "file_bytes",
+          "file_bytes": 116875000,
+          "file_url": null
+        }
+      ],
+      "verified_at": "2026-11-15",
+      "complete": true,
+      "incomplete_fields": []
+    }
+  ]
+}

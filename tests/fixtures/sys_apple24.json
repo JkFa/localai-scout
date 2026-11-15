@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "kind": "system",
+  "scout_version": "0.1.0",
+  "collected_at": "2026-11-15T12:00:00Z",
+  "platform": "darwin",
+  "fixture": {
+    "synthetic": true,
+    "description": "Perfil 4 (SINTÉTICO): Apple Silicon 24 GiB memória unificada. Nenhum valor é medição real."
+  },
+  "os": {
+    "name": {
+      "value": "macOS",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "version": {
+      "value": "15.0",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "kernel": {
+      "value": "24.0.0-fixture",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "arch": {
+      "value": "arm64",
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "cpu": {
+    "model": {
+      "value": "FIXTURE APPLE SILICON 12C",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "vendor": {
+      "value": "Apple",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_logical": {
+      "value": 12,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_physical": {
+      "value": 12,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_performance": {
+      "value": 8,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_efficiency": {
+      "value": 4,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "isa": {
+      "avx2": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "avx512": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "amx": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "neon": {
+        "value": true,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "sve": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      }
+    }
+  },
+  "memory": {
+    "ram_total_bytes": {
+      "value": 25769803776,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "type": {
+      "value": "LPDDR5",
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "speed_mts": {
+      "value": 6400,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "channels": {
+      "value": null,
+      "source": "fixture",
+      "confidence": "low"
+    },
+    "bandwidth_bytes_per_s": {
+      "value": 200000000000,
+      "source": "fixture",
+      "confidence": "medium",
+      "note": "valor sintético redondo"
+    },
+    "unified": {
+      "value": true,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "swap_total_bytes": {
+      "value": 0,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "gpus": {
+    "value": [
+      {
+        "index": 0,
+        "vendor": {
+          "value": "apple",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "name": {
+          "value": "FIXTURE APPLE GPU (unificada)",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "vram_total_bytes": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low",
+          "note": "memória unificada: o pool é ram_total"
+        },
+        "vram_free_bytes": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "bandwidth_bytes_per_s": {
+          "value": 200000000000,
+          "source": "fixture",
+          "confidence": "medium",
+          "note": "valor sintético, não é especificação de produto"
+        },
+        "driver_version": {
+          "value": "000.00-fixture",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "compute_capability": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "backend": {
+          "value": "metal",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "bf16": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "fp8": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "flash_attention": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "disks": {
+    "value": [
+      {
+        "mount": "/",
+        "kind": {
+          "value": "ssd",
+          "source": "fixture",
+          "confidence": "medium"
+        },
+        "total_bytes": {
+          "value": 1000000000000,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "free_bytes": {
+          "value": 500000000000,
+          "source": "fixture",
+          "confidence": "high"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "power": {
+    "has_battery": {
+      "value": true,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "on_battery": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "runtimes": {
+    "ollama": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_cli": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_server": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_bench": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "lm_studio": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "comfyui": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "ollama_models": {
+      "value": null,
+      "source": "ollama list",
+      "confidence": "low",
+      "note": "ollama ausente do PATH"
+    }
+  },
+  "probes": [
+    {
+      "probe": "sysctl",
+      "status": "ok",
+      "message": "perfil sintético"
+    },
+    {
+      "probe": "nvidia-smi",
+      "status": "not_found",
+      "message": "nvidia-smi não está no PATH"
+    }
+  ]
+}

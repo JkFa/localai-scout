@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "kind": "system",
+  "scout_version": "0.1.0",
+  "collected_at": "2026-11-15T12:00:00Z",
+  "platform": "linux",
+  "fixture": {
+    "synthetic": true,
+    "description": "Perfil 5 (SINTÉTICO): desktop 32 GiB DDR5 + GPU AMD 16 GiB via ROCm. Nenhum valor é medição real."
+  },
+  "os": {
+    "name": {
+      "value": "Ubuntu",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "version": {
+      "value": "24.04",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "kernel": {
+      "value": "6.8.0-fixture",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "arch": {
+      "value": "x86_64",
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "cpu": {
+    "model": {
+      "value": "FIXTURE CPU 8C/16T",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "vendor": {
+      "value": "GenuineIntel",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_logical": {
+      "value": 16,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_physical": {
+      "value": 8,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_performance": {
+      "value": 8,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_efficiency": {
+      "value": 0,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "isa": {
+      "avx2": {
+        "value": true,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "avx512": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "amx": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "neon": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "sve": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      }
+    }
+  },
+  "memory": {
+    "ram_total_bytes": {
+      "value": 34359738368,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "type": {
+      "value": "DDR5",
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "speed_mts": {
+      "value": 6000,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "channels": {
+      "value": 2,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "bandwidth_bytes_per_s": {
+      "value": 96000000000,
+      "source": "fixture",
+      "confidence": "medium",
+      "note": "6000 MT/s * 2 canais * 8 bytes"
+    },
+    "unified": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "swap_total_bytes": {
+      "value": 2147483648,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "gpus": {
+    "value": [
+      {
+        "index": 0,
+        "vendor": {
+          "value": "amd",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "name": {
+          "value": "FIXTURE AMD 16GB (perfil 5)",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "vram_total_bytes": {
+          "value": 17179869184,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "vram_free_bytes": {
+          "value": 16600000000,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "bandwidth_bytes_per_s": {
+          "value": 624000000000,
+          "source": "fixture",
+          "confidence": "medium",
+          "note": "valor sintético, não é especificação de produto"
+        },
+        "driver_version": {
+          "value": "000.00-fixture",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "compute_capability": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "backend": {
+          "value": "rocm",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "bf16": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "fp8": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "flash_attention": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "disks": {
+    "value": [
+      {
+        "mount": "/",
+        "kind": {
+          "value": "nvme",
+          "source": "fixture",
+          "confidence": "medium"
+        },
+        "total_bytes": {
+          "value": 1000000000000,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "free_bytes": {
+          "value": 600000000000,
+          "source": "fixture",
+          "confidence": "high"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "power": {
+    "has_battery": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "on_battery": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "runtimes": {
+    "ollama": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_cli": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_server": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_bench": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "lm_studio": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "comfyui": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "ollama_models": {
+      "value": null,
+      "source": "ollama list",
+      "confidence": "low",
+      "note": "ollama ausente do PATH"
+    }
+  },
+  "probes": [
+    {
+      "probe": "rocm-smi",
+      "status": "ok",
+      "message": "perfil sintético"
+    },
+    {
+      "probe": "nvidia-smi",
+      "status": "not_found",
+      "message": "nvidia-smi não está no PATH"
+    }
+  ]
+}

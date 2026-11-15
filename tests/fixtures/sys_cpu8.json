@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "kind": "system",
+  "scout_version": "0.1.0",
+  "collected_at": "2026-11-15T12:00:00Z",
+  "platform": "linux",
+  "fixture": {
+    "synthetic": true,
+    "description": "Perfil 1 (SINTÉTICO): notebook CPU-only, 8 GiB DDR4 single-channel, HDD. Nenhum valor é medição real."
+  },
+  "os": {
+    "name": {
+      "value": "Ubuntu",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "version": {
+      "value": "24.04",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "kernel": {
+      "value": "6.8.0-fixture",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "arch": {
+      "value": "x86_64",
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "cpu": {
+    "model": {
+      "value": "FIXTURE CPU 4C/8T",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "vendor": {
+      "value": "GenuineIntel",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_logical": {
+      "value": 8,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_physical": {
+      "value": 4,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_performance": {
+      "value": 4,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_efficiency": {
+      "value": 0,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "isa": {
+      "avx2": {
+        "value": true,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "avx512": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "amx": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "neon": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "sve": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      }
+    }
+  },
+  "memory": {
+    "ram_total_bytes": {
+      "value": 8589934592,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "type": {
+      "value": "DDR4",
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "speed_mts": {
+      "value": 2666,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "channels": {
+      "value": 1,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "bandwidth_bytes_per_s": {
+      "value": 21328000000,
+      "source": "fixture",
+      "confidence": "medium",
+      "note": "2666 MT/s * 1 canal * 8 bytes"
+    },
+    "unified": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "swap_total_bytes": {
+      "value": 4294967296,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "gpus": {
+    "value": [],
+    "source": "fixture",
+    "confidence": "medium"
+  },
+  "disks": {
+    "value": [
+      {
+        "mount": "/",
+        "kind": {
+          "value": "hdd",
+          "source": "fixture",
+          "confidence": "medium"
+        },
+        "total_bytes": {
+          "value": 1000000000000,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "free_bytes": {
+          "value": 400000000000,
+          "source": "fixture",
+          "confidence": "high"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "power": {
+    "has_battery": {
+      "value": true,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "on_battery": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "runtimes": {
+    "ollama": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_cli": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_server": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_bench": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "lm_studio": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "comfyui": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "ollama_models": {
+      "value": null,
+      "source": "ollama list",
+      "confidence": "low",
+      "note": "ollama ausente do PATH"
+    }
+  },
+  "probes": [
+    {
+      "probe": "fixture",
+      "status": "ok",
+      "message": "perfil sintético"
+    }
+  ]
+}
