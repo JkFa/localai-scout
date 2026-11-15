@@ -179,9 +179,11 @@ def parse_dmidecode(text: str) -> dict[str, Any]:
     # Canais: localizadores distintos de canal; sem padrão, nº de módulos (estimativa).
     chans = set()
     for d in pop:
-        m = re.search(r"channel\s*([a-z0-9]+)", d.get("Locator", "") + " " + d.get("Bank Locator", ""), re.I)
+        loc = d.get("Locator", "") + " " + d.get("Bank Locator", "")
+        m = re.search(r"channel\s*([a-z0-9]+)", loc, re.I)
         if m:
-            chans.add(m.group(1).upper())
+            c = re.search(r"controller\s*([a-z0-9]+)", loc, re.I)  # Controller0-ChannelA != Controller1-ChannelA
+            chans.add(((c.group(1).upper() if c else ""), m.group(1).upper()))
     channels = len(chans) if chans else len(pop)
     return {"populated": len(pop), "type": type_,
             "speed_mts": min(speeds) if speeds else None,  # o mais lento limita o barramento
@@ -341,11 +343,17 @@ def parse_ollama_list(text: str) -> list[dict[str, Any]]:
     return out
 
 
+_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
 def ram_bandwidth(mts: int | None, channels: int | None, mem_type: str | None,
-                  table: dict | None) -> tuple[int | None, str, str, str | None]:
-    """-> (bytes/s, source, confidence, note). MT/s*canais*8 se ambos; senão tabela por geração; senão None."""
+                  table: dict | None, mts_conf: str = "medium",
+                  channels_conf: str = "medium") -> tuple[int | None, str, str, str | None]:
+    """-> (bytes/s, source, confidence, note). MT/s*canais*8 se ambos; senão tabela por geração; senão None.
+    A confiança da banda nunca passa da menor entre MT/s e canais (e nunca de medium)."""
     if mts and channels:
-        return (mts * channels * 8 * 10**6, "estimate:mts*channels*8", "medium",
+        conf = min(mts_conf, channels_conf, "medium", key=_RANK.__getitem__)
+        return (mts * channels * 8 * 10**6, "estimate:mts*channels*8", conf,
                 f"{mts} MT/s * {channels} canais * 8 bytes")
     t = ((table or {}).get("ram") or {}).get((mem_type or "").upper())
     if t and isinstance(t.get("bytes_per_s"), int):
@@ -353,3 +361,70 @@ def ram_bandwidth(mts: int | None, channels: int | None, mem_type: str | None,
                 "dado de referência da geração, não detectado; " + str(t.get("note", "")))
     why = "tipo de memória e MT/s não detectados" if not mem_type else f"geração {mem_type} fora da tabela"
     return None, f"none: {why}", "low", None
+
+
+def hybrid_by_freq(rows: list[tuple[int, int, float | None]]) -> tuple[str, tuple[int, int] | None]:
+    """`lscpu -p=CPU,CORE,MAXMHZ` sem sysfs. -> ("hybrid", (perf, eff)) | ("uniform", None) | ("unknown", None).
+    Dois grupos de MAXMHZ separados por >15%: o de maior frequência é o de performance."""
+    per_core: dict[int, float] = {}
+    for _cpu, core, mhz in rows:
+        if mhz is None or mhz <= 0:
+            return "unknown", None
+        per_core[core] = max(per_core.get(core, 0.0), mhz)
+    if not per_core:
+        return "unknown", None
+    hi = max(per_core.values())
+    fast = [c for c, v in per_core.items() if v >= 0.85 * hi]
+    slow = [c for c in per_core if c not in fast]
+    if not slow:
+        return "uniform", None
+    slow_hi = max(per_core[c] for c in slow)
+    if any(per_core[c] < 0.85 * slow_hi for c in slow):
+        return "unknown", None  # mais de dois grupos
+    return "hybrid", (len(fast), len(slow))
+
+
+def parse_lscpu_p_mhz(text: str) -> list[tuple[int, int, float | None]]:
+    rows = []
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split(",")
+        cpu, core = _int(parts[0]), _int(parts[1]) if len(parts) > 1 else None
+        if cpu is None or core is None:
+            continue
+        try:
+            mhz = float(parts[2]) if len(parts) > 2 and parts[2].strip() else None
+        except ValueError:
+            mhz = None
+        rows.append((cpu, core, mhz))
+    return rows
+
+
+OFFICIAL_DOMAINS = ("nvidia.com", "amd.com", "intel.com")
+
+
+def _official(url: str) -> bool:
+    m = re.match(r"^https://([^/]+)/", url or "")
+    host = m.group(1).lower() if m else ""
+    return any(host == d or host.endswith("." + d) for d in OFFICIAL_DOMAINS)
+
+
+def gpu_bandwidth_lookup(name: str | None, table: dict | None) -> tuple[int | None, str | None, str | None]:
+    """-> (bytes/s, source_url, motivo_sem_valor). Substring exata, case-insensitive; só casamento único.
+    Entrada sem fonte oficial (nvidia.com/amd.com/intel.com) ou sem inteiro positivo é ignorada."""
+    if not name or not isinstance(table, dict):
+        return None, None, "no_table_or_name"
+    hits = []
+    for e in table.get("entries") or []:
+        try:
+            ok = (isinstance(e["bandwidth_bytes_per_s"], int) and e["bandwidth_bytes_per_s"] > 0
+                  and _official(e["source_url"]) and e["match"].strip().lower() in name.lower()
+                  and e["match"].strip())
+        except (KeyError, TypeError, AttributeError):
+            ok = False
+        if ok:
+            hits.append(e)
+    if len(hits) == 1:
+        return hits[0]["bandwidth_bytes_per_s"], hits[0]["source_url"], None
+    return None, None, "ambiguous_table_match" if hits else "no_table_match"

@@ -173,23 +173,36 @@ def collect_cpu_linux(probes: Probes) -> dict:
     if physical:
         cpu["cores_physical"] = field(physical, src, conf)
     if physical:
-        hybrid = None
         p_cpus, e_cpus = _sysfs_cpus("cpu_core", probes), _sysfs_cpus("cpu_atom", probes)
         if p_cpus and e_cpus:
             lp = run_cmd(["lscpu", "-p=CPU,CORE"], probes, probe="lscpu-p")
             hybrid = P.hybrid_split(P.parse_lscpu_p(lp), p_cpus, e_cpus) if lp else None
-            if hybrid is None:
+            if hybrid:
+                perf, eff = hybrid
+                cpu["cores_physical"] = field(perf + eff, "sysfs:cpu_core+cpu_atom", "high")
+                cpu["cores_performance"] = field(perf, "sysfs:cpu_core", "high", "E-cores fora de n_threads")
+                cpu["cores_efficiency"] = field(eff, "sysfs:cpu_atom", "high")
+            else:
                 cpu["cores_performance"] = missing("CPU híbrida detectada, mas lscpu -p falhou")
                 cpu["cores_efficiency"] = missing("CPU híbrida detectada, mas lscpu -p falhou")
-        if hybrid:
-            perf, eff = hybrid
-            cpu["cores_physical"] = field(perf + eff, "sysfs:cpu_core+cpu_atom", "high")
-            cpu["cores_performance"] = field(perf, "sysfs:cpu_core", "high", "E-cores fora de n_threads")
-            cpu["cores_efficiency"] = field(eff, "sysfs:cpu_atom", "high")
-        elif not (p_cpus and e_cpus):
-            cpu["cores_performance"] = field(physical, "derived:cores_physical", conf, "CPU não híbrida")
-            cpu["cores_efficiency"] = field(0, "derived:cpu_not_hybrid", "medium",
-                                            "sem /sys/devices/cpu_core e cpu_atom")
+        else:  # sem sysfs: nunca high
+            lp = run_cmd(["lscpu", "-p=CPU,CORE,MAXMHZ"], probes, probe="lscpu-p-mhz")
+            kind, split = P.hybrid_by_freq(P.parse_lscpu_p_mhz(lp)) if lp else ("unknown", None)
+            intel = "intel" in (info.get("vendor") or "").lower()
+            if kind == "hybrid" and split:
+                perf, eff = split
+                cpu["cores_physical"] = field(perf + eff, "lscpu:maxmhz", "medium")
+                cpu["cores_performance"] = field(perf, "lscpu:maxmhz", "medium",
+                                                 "grupo de maior MAXMHZ; E-cores fora de n_threads")
+                cpu["cores_efficiency"] = field(eff, "lscpu:maxmhz", "medium")
+            elif kind == "unknown" and intel:
+                cpu["cores_performance"] = field(physical, "derived:cores_physical", "low",
+                                                 "hybrid_undetermined: sem sysfs e sem MAXMHZ conclusivo")
+                cpu["cores_efficiency"] = missing("hybrid_undetermined: sem sysfs e sem MAXMHZ conclusivo")
+            else:
+                src = "lscpu:maxmhz" if kind == "uniform" else "derived:cpu_not_hybrid"
+                cpu["cores_performance"] = field(physical, "derived:cores_physical", "medium", "CPU não híbrida")
+                cpu["cores_efficiency"] = field(0, src, "medium", "sem sysfs cpu_core/cpu_atom")
     else:
         cpu["cores_physical"] = missing(why)
         cpu["cores_performance"] = missing("núcleos físicos não detectados")
@@ -259,10 +272,18 @@ def _memory_rest(mem: dict, dmi: dict | None, unified: bool | None, platform_not
                                 None if exact else "estimado pelo nº de módulos populados")
     else:
         mem["channels"] = missing(why)
-    bw, src, conf, note = P.ram_bandwidth(mts, ch, t, _load_bw_table())
+    ch_conf = "low" if not (dmi and dmi.get("channels_exact")) else "medium"
+    bw, src, conf, note = P.ram_bandwidth(mts, ch, t, _load_bw_table(), "medium", ch_conf)
     mem["bandwidth_bytes_per_s"] = field(bw, src, conf, note)
     mem["unified"] = field(unified, platform_note, "high") if unified is not None else missing("plataforma desconhecida")
     return mem
+
+
+def _load_gpu_table() -> dict | None:
+    try:
+        return json.loads((DATA / "gpu_bandwidth.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def _gpu_entry(i: int, vendor: str | None, g: dict, src: str, vendor_src: str) -> dict:
@@ -271,6 +292,13 @@ def _gpu_entry(i: int, vendor: str | None, g: dict, src: str, vendor_src: str) -
     no_cc = "compute capability indisponível" if vendor == "nvidia" else "só derivável de CUDA compute capability"
     backend = {"nvidia": "cuda", "amd": "rocm"}.get(vendor or "")
     bw_reason = "sem sonda local de clock de memória e largura de barramento; sem tabela por nome de GPU"
+    bw, url, why = P.gpu_bandwidth_lookup(g.get("name"), _load_gpu_table())
+    if bw is not None:
+        bw_field = field(bw, "table", "medium", f"data/gpu_bandwidth.json; fonte: {url}")
+    elif why == "ambiguous_table_match":
+        bw_field = missing("ambiguous_table_match")
+    else:
+        bw_field = missing(bw_reason)
     entry = {
         "index": i,
         "vendor": field(vendor, vendor_src, "high") if vendor else missing("fabricante não detectado"),
@@ -279,7 +307,7 @@ def _gpu_entry(i: int, vendor: str | None, g: dict, src: str, vendor_src: str) -
                              else missing(f"{src} não informou a VRAM")),
         "vram_free_bytes": (field(g["vram_free"], f"{src}:memory.free", "high") if g.get("vram_free") is not None
                             else missing(f"{src} não informou VRAM livre")),
-        "bandwidth_bytes_per_s": missing(bw_reason),
+        "bandwidth_bytes_per_s": bw_field,
         "driver_version": field(g["driver"], src, "medium" if src == "rocm-smi" else "high") if g.get("driver")
         else missing(f"{src} não informou o driver"),
         "compute_capability": field(cc, f"{src}:compute_cap", "high") if cc else missing(no_cc),

@@ -541,3 +541,17 @@ Ausente (rejeição antes do cálculo) = `calculated` para o frontend.
 **Decisão (humano, m7_fixes.md F8).** `scout plan` e `scout serve` aceitam
 `--tuning F` (padrão `data/tuning.json`), para que os testes usem
 `tests/fixtures/tuning_test.json` e nunca leiam `data/`.
+
+## 2026-11-15 — Fase 7 (coletor): F2, F3, F4b
+
+- **F2.** Sem `/sys/devices/cpu_core|cpu_atom`: `lscpu -p=CPU,CORE,MAXMHZ`; dois grupos de MAXMHZ separados por >15% =
+  híbrida (maior = performance, medium). Frequência uniforme = não híbrida (medium). Sem MAXMHZ/inconclusivo e Intel:
+  `cores_performance` = físicos com low (`hybrid_undetermined`) e `cores_efficiency` null. Nunca high sem sysfs.
+- **F3.** Chave de canal = (controlador, canal). Canais por contagem de módulos = low, e a banda derivada nunca excede
+  a menor confiança entre MT/s e canais (teto medium).
+- **F4b (revisa a resposta Q5).** Banda de GPU pode vir de `data/gpu_bandwidth.json` (`reviewed: false`), só com casamento
+  único por substring e `source_url` em nvidia.com/amd.com/intel.com (o código ignora entradas fora disso). Resultado:
+  `source: "table"`, medium; duplo casamento = `ambiguous_table_match`, null. A tabela foi entregue VAZIA: as páginas
+  oficiais conferidas hoje (nvidia.com: RTX 3060/3060 Ti, 4060/4060 Ti, 4070, 4090; amd.com: RX 7800 XT, ir.amd.com e
+  rocm.docs.amd.com) trazem largura de barramento, mas nenhuma traz GB/s (NVIDIA) ou não carregou/não traz o número (AMD).
+  Entradas ficam para o humano com fonte oficial que traga o número.
