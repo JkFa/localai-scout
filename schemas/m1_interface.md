@@ -25,7 +25,7 @@ como adotados). Formato de dados: `schemas/*.schema.json`.
 
 ## `scout/estimate.py` — funções puras, sem I/O
 
-    fmt_gb(n_bytes: int) -> str                     # "7.62 GB", base 10, 2 casas
+    fmt_gb(n_bytes: int) -> str                     # "11.00 GiB": n / 2**30, 2 casas, rótulo GiB
     vram_display(vram_total: int, vram_free: int) -> int
     vram_usable(vram_total: int, vram_free: int) -> int
     ram_usable(ram_total: int) -> int
@@ -83,3 +83,20 @@ nenhuma das duas saídas. Todo número do markdown aparece também no `--json`
 `sys_cpu8.json`, `sys_rtx3060.json`, `sys_ddr5_64.json`, `sys_apple24.json`,
 `sys_rx7800xt.json`. Todos válidos contra `schemas/`, sintéticos, sem nomes de
 modelos reais.
+
+## Adendo — 2026-11-15, aprovado pelo humano após a Fase 1
+
+1. **Unidade de apresentação de memória:** `fmt_gb` usa base binária,
+   `f"{n_bytes / 2**30:.2f} GiB"`. Banda continua em GB/s decimal
+   (`bytes/s / 1e9`), que é a convenção de fabricante. O nome `fmt_gb` fica.
+2. **Principal por tarefa:** o primeiro candidato não bloqueado da tarefa na
+   ordem final do solver, salvo a regra 3.
+3. **Preferência de qualidade abaixo de 7e9** (PROMPT.md M1): ao escolher o
+   principal de uma tarefa, se o candidato escolhido pela regra 2 tem
+   `params_total < 7e9` e bpw < 5.5, e existe outro candidato não bloqueado
+   da mesma tarefa, com `params_total` menor e bpw >= 6.5, cujo tier não é
+   pior, o principal passa a ser esse menor (entre vários, o primeiro na
+   ordem final). A ordem da tabela de candidatos não muda; só `primary_for`.
+   O candidato preterido recebe aviso/nota `quality_preference`.
+4. **Catálogo velho:** o solver não emite `catalog_stale`; fica para
+   `scout catalog check` (Fase 3).

@@ -338,3 +338,38 @@ mesmo que coubesse na memória unificada.
 As propostas A17 a A23 (ttft null, tier do híbrido pelo pior pool, fração
 ativa do MoE nos dois trechos, aritmética inteira, campo de hardware null)
 foram aprovadas pelo humano como estão e valem para o M1.
+
+## 2026-11-15 — memória apresentada em GiB, banda em GB/s decimal
+
+**Decisão (humano, adendo de `schemas/m1_interface.md` item 1).** `fmt_gb`
+passa a usar base binária: `f"{n_bytes / 2**30:.2f} GiB"`; o nome da função
+fica. Banda continua decimal (`bytes/s / 1e9`, "GB/s"), convenção de
+fabricante, por `fmt_gbps()` em `scout/estimate.py`.
+
+**Consequência.** Internamente nada muda (bytes inteiros). O teste "todo
+número do markdown existe no --json" precisa converter bytes por `fmt_gb` e
+banda por `fmt_gbps`.
+
+## 2026-11-15 — principal por tarefa
+
+**Decisão (humano, adendo item 2).** `primary_for` de uma tarefa = o primeiro
+candidato não bloqueado que tem a tarefa, na ordem final do solver (tier,
+tokens/s desc com null por último, `model_id`), salvo a preferência de
+qualidade abaixo.
+
+## 2026-11-15 — preferência de qualidade abaixo de 7e9
+
+**Decisão (humano, adendo item 3; PROMPT.md M1).** Se o principal escolhido
+pela regra anterior tem `params_total < 7e9` e bpw < 5.5, e existe outro
+candidato não bloqueado da mesma tarefa com `params_total` menor, bpw >= 6.5
+e tier não pior, o principal passa a ser esse (o primeiro na ordem final). A
+ordem da lista de candidatos não muda. O solver emite o aviso
+`quality_preference` (novo código no enum de `warning.code` em
+`schemas/feasibility.schema.json`) com `field: "candidates[i]"` apontando o
+preterido; o markdown marca o preterido na coluna de nota.
+
+## 2026-11-15 — catalog_stale fora do solver
+
+**Decisão (humano, adendo item 4).** O solver não emite `catalog_stale`: ele
+não lê relógio (determinismo). A checagem de `verified_at` > 60 dias fica
+para `scout catalog check` (Fase 3). O código continua no enum do schema.

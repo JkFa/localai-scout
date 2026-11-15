@@ -24,6 +24,10 @@ from scout import estimate as E
 TASKS: tuple[str, ...] = ("chat", "code", "embeddings", "vlm", "stt", "diffusion")
 PLACEMENTS: tuple[str, ...] = ("gpu_full", "hybrid", "cpu_only")
 FULL_GPU_FORMATS: tuple[str, ...] = ("EXL2", "AWQ", "GPTQ")
+# Preferência de qualidade (adendo de m1_interface.md, regra 3).
+QUALITY_PREF_MAX_PARAMS = 7_000_000_000
+QUALITY_PREF_LOW_BPW = 5.5
+QUALITY_PREF_HIGH_BPW = 6.5
 PROVENANCE_RANK: dict[str, int] = {"catalog": 0, "measured": 0, "calculated": 1, "estimated": 2}
 
 SWAP_MESSAGE = (
@@ -536,6 +540,44 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
     }
 
 
+def _quality_alternative(chosen: dict, pool: list[dict]) -> dict | None:
+    """Regra 3 do adendo de m1_interface.md (PROMPT.md M1: abaixo de 7e9, modelo
+    MENOR em bpw ALTO vence o maior em bpw destrutivo). Devolve o substituto ou None."""
+    if not (chosen["model"]["params_total"] < QUALITY_PREF_MAX_PARAMS
+            and chosen["quant"]["bpw"] < QUALITY_PREF_LOW_BPW):
+        return None
+    chosen_tier = E.TIERS.index(chosen["tier"])
+    for c in pool:  # pool já está na ordem final
+        if (c is not chosen
+                and c["model"]["params_total"] < chosen["model"]["params_total"]
+                and c["quant"]["bpw"] >= QUALITY_PREF_HIGH_BPW
+                and E.TIERS.index(c["tier"]) <= chosen_tier):
+            return c
+    return None
+
+
+def _assign_primary(candidates: list[dict], tasks: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Preenche primary_for (regras 2 e 3 do adendo). Não reordena candidatos."""
+    warnings: list[dict[str, Any]] = []
+    for task in tasks:
+        pool = [c for c in candidates if not c["blocked"] and task in (c["model"]["tasks"] or [])]
+        if not pool:
+            continue
+        chosen = pool[0]
+        alt = _quality_alternative(chosen, pool)
+        if alt is not None:
+            i = candidates.index(chosen)
+            warnings.append(_warning(
+                "quality_preference", "info",
+                f"Principal de {task}: {alt['model']['id']} ({alt['quant']['name']}) no lugar de "
+                f"{chosen['model']['id']} ({chosen['quant']['name']}): abaixo de 7B, modelo menor em "
+                f"bpw alto é preferível a modelo maior em bpw destrutivo.",
+                f"candidates[{i}]"))
+            chosen = alt
+        chosen["primary_for"].append(task)
+    return warnings
+
+
 def _sort_key(c: dict) -> tuple:
     tps = c["tokens_per_s_est"]
     return (E.TIERS.index(c["tier"]), tps is None, -(tps or 0.0), c["model"]["id"],
@@ -585,11 +627,7 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
             rejected.append(rej)
 
     candidates.sort(key=_sort_key)
-    for task in tasks:
-        for c in candidates:
-            if not c["blocked"] and task in (c["model"]["tasks"] or []):
-                c["primary_for"].append(task)
-                break
+    warnings += _assign_primary(candidates, tasks)
 
     verified = sorted(m["verified_at"] for m in models if m.get("verified_at"))
     out: dict[str, Any] = {

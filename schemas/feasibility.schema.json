@@ -224,7 +224,7 @@
       "required": ["code", "severity", "message"],
       "additionalProperties": false,
       "properties": {
-        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool"]},
+        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool", "quality_preference"]},
         "severity": {"enum": ["info", "warn"]},
         "message": {"type": "string", "minLength": 1},
         "field": {"type": "string", "description": "Caminho JSON do campo relacionado, ex. 'memory.speed_mts'."}

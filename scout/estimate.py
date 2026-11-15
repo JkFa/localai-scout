@@ -1,7 +1,7 @@
 """Fórmulas do M1 (PROMPT.md), uma função pura por fórmula.
 
 Sem I/O, sem estado, sem rede. Memória em bytes inteiros; contexto e batch em
-tokens inteiros. GB só aparece em fmt_gb(), na apresentação.
+tokens inteiros. GiB/GB só aparecem em fmt_gb()/fmt_gbps(), na apresentação.
 
 Aritmética inteira conforme DECISIONS.md A21 e schemas/m1_interface.md:
 constantes inteiras, comparações de tier multiplicando dos dois lados, KV em
@@ -37,8 +37,16 @@ TIERS: tuple[str, ...] = ("confortavel", "limite", "inviavel")
 
 
 def fmt_gb(n_bytes: int) -> str:
-    """Bytes -> "7.62 GB" (base 10, duas casas). Só para apresentação."""
-    return f"{n_bytes / 1_000_000_000:.2f} GB"
+    """Bytes -> "7.10 GiB" (base binária, duas casas). Só para apresentação.
+
+    O nome fica fmt_gb por contrato (m1_interface.md, adendo item 1).
+    """
+    return f"{n_bytes / 2**30:.2f} GiB"
+
+
+def fmt_gbps(bytes_per_s: int) -> str:
+    """Banda em GB/s decimal (convenção de fabricante). Só para apresentação."""
+    return f"{bytes_per_s / 1_000_000_000:.2f} GB/s"
 
 
 def vram_display(vram_total: int, vram_free: int) -> int:

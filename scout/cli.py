@@ -1,7 +1,7 @@
 """CLI do LocalAI Scout. Fase 1: só `scout plan`.
 
 Saída determinística: sem timestamp, JSON com sort_keys. Todo número do
-markdown sai também no --json (bytes no JSON, GB via fmt_gb no markdown).
+markdown sai também no --json (bytes no JSON, GiB via fmt_gb e GB/s via fmt_gbps no markdown).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from scout import __version__
-from scout.estimate import fmt_gb
+from scout.estimate import fmt_gb, fmt_gbps
 from scout.solver import TASKS, Intent, solve
 
 TUNING_PATH = Path(__file__).resolve().parent.parent / "data" / "tuning.json"
@@ -73,7 +73,7 @@ def render_markdown(f: dict) -> str:
         "| --- | --- | --- | --- | --- |",
     ]
     for p in f["pools"]:
-        bw = "desconhecida" if p["bandwidth_bytes_per_s"] is None else fmt_gb(p["bandwidth_bytes_per_s"]) + "/s"
+        bw = "desconhecida" if p["bandwidth_bytes_per_s"] is None else fmt_gbps(p["bandwidth_bytes_per_s"])
         lines.append(f"| {p['id']} | {fmt_gb(p['total_bytes'])} | {fmt_gb(p['reserved_bytes'])} | "
                      f"{fmt_gb(p['usable_bytes'])} | {bw} |")
 
@@ -85,9 +85,12 @@ def render_markdown(f: dict) -> str:
             "| modelo | quant | placement | camadas na GPU | memória total | tier | tokens/s | confiança | nota |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
-        for c in f["candidates"]:
+        passed_over = {w["field"] for w in f["warnings"] if w["code"] == "quality_preference"}
+        for i, c in enumerate(f["candidates"]):
             q = c["quant"]
             notes: list[str] = []
+            if f"candidates[{i}]" in passed_over:
+                notes.append("preterido por qualidade (ver avisos)")
             if c["primary_for"]:
                 notes.append("principal: " + ", ".join(c["primary_for"]))
             if c["blocked"]:
