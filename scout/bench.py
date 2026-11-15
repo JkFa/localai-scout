@@ -543,6 +543,15 @@ def choose_tool(gguf: str | None, ollama_model: str | None) -> tuple[str | None,
     return None, missing
 
 
+def ollama_unload(name: str) -> None:
+    """Descarrega o modelo ao fim da medição (keep_alive 0): com dois modelos na mesma rodada, o segundo carregaria
+    com o primeiro ainda na RAM e empurraria memória para o swap. Falha aqui não invalida a medição já feita."""
+    try:
+        _ollama_request("POST", "/api/generate", {"model": name, "keep_alive": 0}, timeout=60.0)
+    except BenchError:
+        pass
+
+
 def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str | None,
                   power: dict, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> dict:
     arch: str | None = None
@@ -565,7 +574,11 @@ def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str
         swaps[n] = swap_delta(b, read_swap_counters())
         return r
     cond_before = read_conditions()
-    res = stabilize(fn)
+    try:
+        res = stabilize(fn)
+    finally:
+        if tool == "ollama":
+            ollama_unload(ollama_model)
     cond_after = read_conditions()
     nil = {"swap_in_pages": None, "swap_out_pages": None}
     res["warmup"].update(swaps.get(0, nil))

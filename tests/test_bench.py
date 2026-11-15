@@ -126,7 +126,7 @@ def test_target_refusals():
 class FakeOllama:
     def __init__(self, models, decode, prefill=None, blob_delta=0):
         self.models, self.decode, self.prefill = models, list(decode), list(prefill or [])
-        self.blob_delta, self.calls, self.generated = blob_delta, [], []
+        self.blob_delta, self.calls, self.generated, self.unloaded = blob_delta, [], [], []
 
     def __call__(self, method, path, body=None, timeout=600.0):
         self.calls.append((method, path))
@@ -137,6 +137,9 @@ class FakeOllama:
         if path == "/api/version":
             return {"version": "0.0.test"}
         assert path == "/api/generate"
+        if body.get("keep_alive") == 0 and "prompt" not in body:
+            self.unloaded.append(body["model"])
+            return {}
         self.generated.append(body)
         i = len(self.generated) - 1
         tps = self.decode[min(i, len(self.decode) - 1)]
@@ -567,3 +570,26 @@ def test_ollama_generation_must_reach_three_quarters_of_gen_tokens(monkeypatch, 
     else:
         with pytest.raises(B.BenchError):
             B.ollama_round("x", target(), "p", 1)
+
+
+def test_each_ollama_model_is_unloaded_after_measuring(monkeypatch, fixed_env):
+    """Com dois modelos na mesma rodada, o segundo não pode carregar com o primeiro na RAM (swap)."""
+    t = target()
+    fake = FakeOllama({"dense:7b": t.file_bytes}, [1.0])
+    monkeypatch.setattr(B, "_ollama_request", fake)
+    B.measure_model(t, "ollama", None, "dense:7b", AC)
+    assert fake.unloaded == ["dense:7b"]
+    assert fake.generated, "a medição rodou antes de descarregar"
+
+
+def test_unload_failure_does_not_lose_measurement(monkeypatch, fixed_env):
+    t = target()
+    fake = FakeOllama({"dense:7b": t.file_bytes}, [1.0])
+
+    def flaky(method, path, body=None, timeout=600.0):
+        if path == "/api/generate" and body.get("keep_alive") == 0 and "prompt" not in body:
+            raise B.BenchError("ollama_unreachable", "x")
+        return fake(method, path, body, timeout)
+    monkeypatch.setattr(B, "_ollama_request", flaky)
+    r = B.measure_model(t, "ollama", None, "dense:7b", AC)
+    assert r["decode_tps"] > 0
