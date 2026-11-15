@@ -249,3 +249,112 @@ def test_denied_dmidecode_gives_hint(monkeypatch, capsys, tmp_path):
     from scout.cli import main
     main(["collect", "--out", str(tmp_path / "s.json")])
     assert "--dmidecode mem.txt" in capsys.readouterr().err
+
+
+# ---- Fase 7: F2 (híbrida sem sysfs), F3 (canais), F4b (tabela de GPU)
+
+def test_hybrid_by_freq():
+    kind, split = P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_hybrid.txt")))
+    assert (kind, split) == ("hybrid", (6, 8))
+    assert P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_uniform.txt")))[0] == "uniform"
+    assert P.hybrid_by_freq(P.parse_lscpu_p_mhz(txt("lscpu_p_mhz_empty.txt")))[0] == "unknown"
+    assert P.hybrid_by_freq([])[0] == "unknown"
+
+
+def _cpu(monkeypatch, lscpu_txt, mhz_txt):
+    def fake(cmd, probes, timeout=5.0, probe=None):
+        probes.add(probe or cmd[0], "ok")
+        if cmd == ["lscpu"]:
+            return txt(lscpu_txt)
+        if cmd[0] == "lscpu":
+            return txt(mhz_txt) if mhz_txt else None
+        return None
+    monkeypatch.setattr(C, "run_cmd", fake)
+    monkeypatch.setattr(C, "_sysfs_cpus", lambda name, probes: set())
+    return C.collect_cpu_linux(C.Probes())
+
+
+def test_f2_hybrid_without_sysfs_is_medium(monkeypatch):
+    cpu = _cpu(monkeypatch, "lscpu_intel_hybrid.txt", "lscpu_p_mhz_hybrid.txt")
+    assert cpu["cores_performance"]["value"] == 6 and cpu["cores_efficiency"]["value"] == 8
+    assert cpu["cores_performance"]["confidence"] == "medium"
+
+
+def test_f2_intel_inconclusive_is_low_and_never_high(monkeypatch):
+    cpu = _cpu(monkeypatch, "lscpu_intel_hybrid.txt", "lscpu_p_mhz_empty.txt")
+    assert cpu["cores_performance"]["confidence"] == "low"
+    assert "hybrid_undetermined" in cpu["cores_performance"]["note"]
+    assert cpu["cores_efficiency"]["value"] is None
+    cpu = _cpu(monkeypatch, "lscpu_intel_hybrid.txt", None)
+    assert cpu["cores_performance"]["confidence"] == "low"
+
+
+def test_f2_amd_without_sysfs_never_high(monkeypatch):
+    cpu = _cpu(monkeypatch, "lscpu_amd.txt", "lscpu_p_mhz_uniform.txt")
+    assert cpu["cores_performance"]["value"] == 4 and cpu["cores_performance"]["confidence"] == "medium"
+    assert cpu["cores_efficiency"]["value"] == 0 and cpu["cores_efficiency"]["confidence"] == "medium"
+
+
+def test_f3_controller_is_part_of_channel_key():
+    d = P.parse_dmidecode(txt("dmidecode_two_controllers.txt"))
+    assert d["channels"] == 2 and d["channels_exact"] is True
+    # mesmo ChannelA em controladores distintos não colapsa em 1
+
+
+def test_f3_count_fallback_lowers_bandwidth_confidence():
+    d = P.parse_dmidecode(txt("dmidecode_no_locator.txt"))
+    assert d["channels"] == 2 and d["channels_exact"] is False
+    mem = C._memory_rest({"ram_total_bytes": C.missing("x"), "swap_total_bytes": C.missing("x")}, d, False, "p")
+    assert mem["channels"]["confidence"] == "low"
+    assert mem["bandwidth_bytes_per_s"]["value"] == 3200 * 2 * 8 * 10**6
+    assert mem["bandwidth_bytes_per_s"]["confidence"] == "low"
+
+
+def test_f3_bandwidth_never_more_confident_than_inputs():
+    assert P.ram_bandwidth(3200, 2, "DDR4", None, "medium", "medium")[2] == "medium"
+    assert P.ram_bandwidth(3200, 2, "DDR4", None, "low", "medium")[2] == "low"
+    assert P.ram_bandwidth(3200, 2, "DDR4", None, "high", "high")[2] == "medium"
+
+
+GT = {"reviewed": False, "entries": [
+    {"match": "rtx 3060", "bandwidth_bytes_per_s": 360_000_000_000, "source_url": "https://www.nvidia.com/x", "verified_at": "2026-11-15"},
+    {"match": "rtx 3060 ti", "bandwidth_bytes_per_s": 448_000_000_000, "source_url": "https://www.nvidia.com/y", "verified_at": "2026-11-15"},
+    {"match": "rx 7800 xt", "bandwidth_bytes_per_s": 624_000_000_000, "source_url": "https://www.amd.com/z", "verified_at": "2026-11-15"},
+    {"match": "rx 6600", "bandwidth_bytes_per_s": 224_000_000_000, "source_url": "https://evil.example/q", "verified_at": "2026-11-15"}]}
+
+
+def test_gpu_table_lookup():
+    L = P.gpu_bandwidth_lookup
+    assert L("NVIDIA GeForce RTX 3060", GT)[0] == 360_000_000_000
+    assert L("AMD Radeon RX 7800 XT", GT)[0] == 624_000_000_000
+    assert L("NVIDIA GeForce RTX 3060 Ti", GT)[2] == "ambiguous_table_match"  # casa 2 entradas
+    assert L("AMD Radeon RX 6600", GT)[2] == "no_table_match"  # fonte não oficial é ignorada
+    assert L("Mendocino", GT)[2] == "no_table_match"
+    assert L("x", None)[0] is None and L(None, GT)[0] is None
+    assert L("x", {"entries": [{"match": ""}]})[0] is None
+
+
+def test_gpu_table_used_in_collect(monkeypatch):
+    _no_tools(monkeypatch)
+    real = C.run_cmd
+
+    def fake(cmd, probes, timeout=5.0, probe=None):
+        if cmd[0] == "nvidia-smi":
+            probes.add("nvidia-smi", "ok")
+            return txt("nvidia_smi.csv")
+        return real(cmd, probes, timeout, probe)
+    monkeypatch.setattr(C, "run_cmd", fake)
+    monkeypatch.setattr(C, "_load_gpu_table", lambda: GT)
+    doc = C.collect()
+    assert_valid("system.schema.json", doc)
+    g0, g1 = doc["gpus"]["value"]
+    assert g0["bandwidth_bytes_per_s"]["value"] == 360_000_000_000
+    assert g0["bandwidth_bytes_per_s"]["source"] == "table" and g0["bandwidth_bytes_per_s"]["confidence"] == "medium"
+    assert g1["bandwidth_bytes_per_s"]["value"] is None  # RTX 4090 fora da tabela
+
+
+def test_shipped_gpu_table_entries_have_official_source():
+    t = json.loads((C.DATA / "gpu_bandwidth.json").read_text(encoding="utf-8"))
+    assert t["reviewed"] is False
+    for e in t["entries"]:
+        assert P._official(e["source_url"]) and isinstance(e["bandwidth_bytes_per_s"], int)

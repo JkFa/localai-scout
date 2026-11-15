@@ -1,0 +1,15 @@
+Handle 0x0010, DMI type 17, 40 bytes
+Memory Device
+	Size: 8 GB
+	Locator: DIMM 0
+	Bank Locator: BANK 0
+	Type: DDR4
+	Configured Memory Speed: 3200 MT/s
+
+Handle 0x0011, DMI type 17, 40 bytes
+Memory Device
+	Size: 8 GB
+	Locator: DIMM 1
+	Bank Locator: BANK 1
+	Type: DDR4
+	Configured Memory Speed: 3200 MT/s
