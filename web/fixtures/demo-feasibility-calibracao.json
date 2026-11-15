@@ -1,0 +1,856 @@
+{
+ "candidates": [
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 13000000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 603979776,
+     "pool": "cpu",
+     "tier": "confortavel",
+     "total_bytes": 5366304480,
+     "weights_bytes": 4280404704
+    }
+   ],
+   "confidence": "low",
+   "confidence_reasons": [
+    "calibration_engine_changed",
+    "calibration_other_arch",
+    "calibration_power_mismatch",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 603979776,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-4B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-4B",
+    "n_layers": 36,
+    "params_active": 4022468096,
+    "params_total": 4022468096,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-4B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 0,
+   "n_threads": 6,
+   "placement": "cpu_only",
+   "primary_for": [
+    "chat"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "calculated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 8.513,
+    "file_bytes": 4280404704,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "calibration",
+   "tokens_per_s_est": 2.34,
+   "total_bytes": 5366304480,
+   "ttft_s_est": null,
+   "weights_bytes": 4280404704
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 13000000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 234881024,
+     "pool": "cpu",
+     "tier": "confortavel",
+     "total_bytes": 8815326208,
+     "weights_bytes": 8098525184
+    }
+   ],
+   "confidence": "low",
+   "confidence_reasons": [
+    "calibration_engine_changed",
+    "calibration_other_arch",
+    "calibration_power_mismatch",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 234881024,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+    "n_layers": 28,
+    "params_active": 7615616512,
+    "params_total": 7615616512,
+    "source_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+    "tasks": [
+     "chat",
+     "code"
+    ]
+   },
+   "n_gpu_layers": 0,
+   "n_threads": 6,
+   "placement": "cpu_only",
+   "primary_for": [
+    "code"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "calculated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 8.5073,
+    "file_bytes": 8098525184,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [
+    {
+     "format": "GGUF",
+     "name": "FP16",
+     "reason_code": "does_not_fit"
+    }
+   ],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "calibration",
+   "tokens_per_s_est": 1.23,
+   "total_bytes": 8815326208,
+   "ttft_s_est": null,
+   "weights_bytes": 8098525184
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 13000000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 603979776,
+     "pool": "cpu",
+     "tier": "confortavel",
+     "total_bytes": 9795417888,
+     "weights_bytes": 8709518112
+    }
+   ],
+   "confidence": "low",
+   "confidence_reasons": [
+    "calibration_engine_changed",
+    "calibration_other_arch",
+    "calibration_power_mismatch",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 603979776,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-8B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-8B",
+    "n_layers": 36,
+    "params_active": 8190735360,
+    "params_total": 8190735360,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-8B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 0,
+   "n_threads": 6,
+   "placement": "cpu_only",
+   "primary_for": [],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "calculated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 8.5067,
+    "file_bytes": 8709518112,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "calibration",
+   "tokens_per_s_est": 1.15,
+   "total_bytes": 9795417888,
+   "ttft_s_est": null,
+   "weights_bytes": 8709518112
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 440960000,
+   "by_pool": [
+    {
+     "budget_bytes": 13000000000,
+     "buffer_bytes": 440960000,
+     "kv_bytes": 75497472,
+     "pool": "cpu",
+     "tier": "confortavel",
+     "total_bytes": 1064122240,
+     "weights_bytes": 547664768
+    }
+   ],
+   "confidence": "high",
+   "confidence_reasons": [
+    "decode_not_applicable",
+    "ttft_unspecified"
+   ],
+   "ctx_effective": 2048,
+   "kv_bytes": 75497472,
+   "model": {
+    "commercial_ok": true,
+    "id": "nomic-ai/nomic-embed-text-v1.5",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+    "n_layers": 12,
+    "params_active": 136731648,
+    "params_total": 136731648,
+    "source_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+    "tasks": [
+     "embeddings"
+    ]
+   },
+   "n_gpu_layers": 0,
+   "n_threads": 6,
+   "notes": [
+    {
+     "code": "decode_not_applicable",
+     "message": "Embeddings não geram texto token a token: tokens/s de decode não se aplica. A métrica aplicável é o throughput de prefill (tokens processados por segundo), ainda não estimado."
+    }
+   ],
+   "placement": "cpu_only",
+   "primary_for": [
+    "embeddings"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "calculated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 32.0432,
+    "file_bytes": 547664768,
+    "format": "GGUF",
+    "name": "F32"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_est": null,
+   "total_bytes": 1064122240,
+   "ttft_s_est": null,
+   "weights_bytes": 547664768
+  }
+ ],
+ "excluded": {
+  "incomplete": 2,
+  "task_mismatch": 0
+ },
+ "fixture": {
+  "description": "Plano derivado de entradas sintéticas (fixture).",
+  "synthetic": true
+ },
+ "inputs": {
+  "calibration": {
+   "calibration_schema_version": 1,
+   "match": [
+    {
+     "current": "linux",
+     "effect": "none",
+     "field": "platform",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": "linux"
+    },
+    {
+     "current": "x86_64",
+     "effect": "none",
+     "field": "os.arch",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": "x86_64"
+    },
+    {
+     "current": "9.9.0-exemplo",
+     "effect": "none",
+     "field": "os.kernel",
+     "layer": "software",
+     "result": "equal",
+     "scope": "all",
+     "stored": "9.9.0-exemplo"
+    },
+    {
+     "current": "CPU Fictícia de Exemplo 8C",
+     "effect": "none",
+     "field": "cpu.model",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": "CPU Fictícia de Exemplo 8C"
+    },
+    {
+     "current": 8,
+     "effect": "none",
+     "field": "cpu.cores_physical",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": 8
+    },
+    {
+     "current": 16000000000,
+     "effect": "none",
+     "field": "memory.ram_total_bytes",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": 16000000000
+    },
+    {
+     "current": null,
+     "effect": "none",
+     "field": "gpu.name",
+     "layer": 1,
+     "result": "unknown",
+     "scope": "gpu",
+     "stored": null
+    },
+    {
+     "current": null,
+     "effect": "none",
+     "field": "gpu.backend",
+     "layer": 1,
+     "result": "unknown",
+     "scope": "gpu",
+     "stored": null
+    },
+    {
+     "current": null,
+     "effect": "none",
+     "field": "gpu.vram_total_bytes",
+     "layer": 1,
+     "result": "unknown",
+     "scope": "gpu",
+     "stored": null
+    },
+    {
+     "current": 5000,
+     "effect": "none",
+     "field": "memory.speed_mts",
+     "layer": 2,
+     "result": "equal",
+     "scope": "cpu",
+     "stored": 5000
+    },
+    {
+     "current": 2,
+     "effect": "none",
+     "field": "memory.channels",
+     "layer": 2,
+     "result": "equal",
+     "scope": "cpu",
+     "stored": 2
+    }
+   ],
+   "origin": "flag",
+   "pools": {
+    "cpu": {
+     "available_power": [
+      {
+       "not_applicable": [],
+       "on_ac": true,
+       "profile": "performance"
+      },
+      {
+       "not_applicable": [],
+       "on_ac": false,
+       "profile": "balanced"
+      }
+     ],
+     "calibration": {
+      "bandwidth_bytes_per_s": 10000000000,
+      "date": "2000-01-01",
+      "fit": {
+       "discard_reason": "um único modelo",
+       "one_param": {
+        "bandwidth_bytes_per_s": 10000000000,
+        "overhead_s_per_token": 0.0
+       },
+       "two_param": null
+      },
+      "form": "1p",
+      "models": [
+       {
+        "architecture": "exemplo",
+        "bytes": 2000000000,
+        "id": "exemplo/modelo-ficticio-4b"
+       }
+      ],
+      "overhead_s_per_token": 0.0,
+      "power": {
+       "not_applicable": [],
+       "on_ac": false,
+       "profile": "balanced"
+      },
+      "prefill_reason": "exemplo: prefill não medido nesta entrada",
+      "prefill_tokens_per_s": null,
+      "stable": true,
+      "tool": "ollama",
+      "tool_version": "9.9.9"
+     },
+     "engine": {
+      "current_version": "10.0.0",
+      "result": "different",
+      "stored_version": "9.9.9",
+      "tool": "ollama"
+     },
+     "power_match": "other_state",
+     "reasons": [
+      "calibration_power_mismatch",
+      "calibration_engine_changed"
+     ],
+     "status": "applied"
+    }
+   },
+   "status": "used",
+   "store": {
+    "calibration_schema_version": 1,
+    "machine": {
+     "cpu.cores_physical": 8,
+     "cpu.model": "CPU Fictícia de Exemplo 8C",
+     "gpu.backend": null,
+     "gpu.name": null,
+     "gpu.vram_total_bytes": null,
+     "memory.channels": 2,
+     "memory.ram_total_bytes": 16000000000,
+     "memory.speed_mts": 5000,
+     "os.arch": "x86_64",
+     "os.kernel": "9.9.0-exemplo",
+     "platform": "linux"
+    },
+    "scout_version": "0.0.0"
+   }
+  },
+  "catalog": {
+   "model_count": 7,
+   "oldest_verified_at": "2026-11-15",
+   "sha256": "bfb5520c685027961f7ef2df943f6e27ecac497fe4841e0fabe2ec7aa3047c8b"
+  },
+  "intent": {
+   "batch": 1,
+   "commercial_use": false,
+   "ctx": 4096,
+   "kv_quant": "f16",
+   "tasks": [
+    "chat",
+    "code",
+    "embeddings",
+    "vlm",
+    "stt"
+   ]
+  },
+  "power": {
+   "not_applicable": [],
+   "on_ac": false,
+   "profile": "performance"
+  },
+  "system": {
+   "collected_at": "2026-11-15T12:00:00Z",
+   "cpu": {
+    "cores_efficiency": {
+     "confidence": "medium",
+     "source": "derived:cpu_not_hybrid",
+     "value": 0
+    },
+    "cores_logical": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": 16
+    },
+    "cores_performance": {
+     "confidence": "high",
+     "note": "CPU não híbrida",
+     "source": "derived:cores_physical",
+     "value": 6
+    },
+    "cores_physical": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": 8
+    },
+    "isa": {
+     "amx": {
+      "confidence": "high",
+      "source": "lscpu:flags",
+      "value": false
+     },
+     "avx2": {
+      "confidence": "high",
+      "source": "lscpu:flags",
+      "value": true
+     },
+     "avx512": {
+      "confidence": "high",
+      "source": "lscpu:flags",
+      "value": false
+     },
+     "neon": {
+      "confidence": "high",
+      "source": "platform.machine",
+      "value": false
+     },
+     "sve": {
+      "confidence": "high",
+      "source": "platform.machine",
+      "value": false
+     }
+    },
+    "model": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": "CPU Fictícia de Exemplo 8C"
+    },
+    "vendor": {
+     "confidence": "high",
+     "source": "lscpu",
+     "value": "GenuineIntel"
+    }
+   },
+   "disks": {
+    "confidence": "high",
+    "source": "os.statvfs+lsblk",
+    "value": [
+     {
+      "free_bytes": {
+       "confidence": "high",
+       "source": "os.statvfs",
+       "value": 200000000000
+      },
+      "kind": {
+       "confidence": "medium",
+       "source": "lsblk:rota+tran",
+       "value": "nvme"
+      },
+      "mount": "/",
+      "total_bytes": {
+       "confidence": "high",
+       "source": "os.statvfs",
+       "value": 500000000000
+      }
+     }
+    ]
+   },
+   "fixture": {
+    "description": "Máquina fictícia (CPU 8C, 16 GB) com calibração sintética. Nenhum valor é medição real.",
+    "synthetic": true
+   },
+   "gpus": {
+    "confidence": "high",
+    "source": "fixture",
+    "value": []
+   },
+   "kind": "system",
+   "memory": {
+    "bandwidth_bytes_per_s": {
+     "confidence": "medium",
+     "note": "3200 MT/s * 2 canais * 8 bytes",
+     "source": "estimate:mts*channels*8",
+     "value": 51200000000
+    },
+    "channels": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": 2
+    },
+    "ram_total_bytes": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": 16000000000
+    },
+    "speed_mts": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": 5000
+    },
+    "swap_total_bytes": {
+     "confidence": "high",
+     "source": "/proc/meminfo:SwapTotal",
+     "value": 2147483648
+    },
+    "type": {
+     "confidence": "medium",
+     "source": "dmidecode",
+     "value": "DDR4"
+    },
+    "unified": {
+     "confidence": "high",
+     "source": "derived:platform",
+     "value": false
+    }
+   },
+   "os": {
+    "arch": {
+     "confidence": "high",
+     "source": "platform.machine",
+     "value": "x86_64"
+    },
+    "kernel": {
+     "confidence": "high",
+     "source": "fixture",
+     "value": "9.9.0-exemplo"
+    },
+    "name": {
+     "confidence": "high",
+     "source": "/etc/os-release:NAME",
+     "value": "Ubuntu"
+    },
+    "version": {
+     "confidence": "high",
+     "source": "/etc/os-release:VERSION_ID",
+     "value": "24.04"
+    }
+   },
+   "platform": "linux",
+   "power": {
+    "has_battery": {
+     "confidence": "high",
+     "source": "/sys/class/power_supply",
+     "value": false
+    },
+    "on_battery": {
+     "confidence": "high",
+     "source": "/sys/class/power_supply",
+     "value": false
+    }
+   },
+   "probes": [
+    {
+     "message": "",
+     "probe": "lscpu",
+     "status": "ok"
+    },
+    {
+     "message": "fixture",
+     "probe": "dmidecode",
+     "status": "ok"
+    },
+    {
+     "message": "",
+     "probe": "nvidia-smi",
+     "status": "ok"
+    },
+    {
+     "message": "rocm-smi não está no PATH",
+     "probe": "rocm-smi",
+     "status": "not_found"
+    },
+    {
+     "message": "ollama não está no PATH",
+     "probe": "ollama",
+     "status": "not_found"
+    }
+   ],
+   "runtimes": {
+    "comfyui": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": false
+    },
+    "llama_bench": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": true
+    },
+    "llama_cli": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": true
+    },
+    "llama_server": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": true
+    },
+    "lm_studio": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": false
+    },
+    "ollama": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": false
+    },
+    "ollama_models": {
+     "confidence": "low",
+     "note": "ollama ausente do PATH",
+     "source": "ollama list",
+     "value": null
+    }
+   },
+   "schema_version": 1,
+   "scout_version": "0.1.0"
+  },
+  "tuning": {
+   "eta_cpu": 0.6,
+   "eta_gpu": 0.75,
+   "max_bpw_offload": 8.5,
+   "prefill_reference": {
+    "date": "2026-11-15",
+    "measured_on": "AMD Ryzen 5 7520U, 4 núcleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens",
+    "power": "AC, performance",
+    "tokens_per_s": 11.7,
+    "tool": "ollama 0.17.6 API"
+   },
+   "source": "default"
+  }
+ },
+ "kind": "feasibility",
+ "pools": [
+  {
+   "bandwidth_bytes_per_s": 51200000000,
+   "eta": 0.6,
+   "gpu_index": null,
+   "id": "cpu",
+   "provenance": {
+    "bandwidth_bytes_per_s": "estimated",
+    "eta": "estimated",
+    "reserved_bytes": "calculated",
+    "total_bytes": "measured",
+    "usable_bytes": "calculated"
+   },
+   "reserved_bytes": 3000000000,
+   "total_bytes": 16000000000,
+   "usable_bytes": 13000000000
+  }
+ ],
+ "rejected": [
+  {
+   "closest": {
+    "by_pool": [
+     {
+      "budget_bytes": 13000000000,
+      "buffer_bytes": 481920000,
+      "kv_bytes": 402653184,
+      "pool": "cpu",
+      "tier": "inviavel",
+      "total_bytes": 19441259008,
+      "weights_bytes": 18556685824
+     }
+    ],
+    "placement": "cpu_only",
+    "quant": {
+     "bpw": 4.8622,
+     "file_bytes": 18556685824,
+     "format": "GGUF",
+     "name": "Q4_K_M"
+    },
+    "total_bytes": 19441259008
+   },
+   "message": "Nenhuma quant dentro do piso de qualidade cabe na memória disponível.",
+   "missing_bytes": 7091259008,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-30B-A3B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+    "n_layers": 48,
+    "params_active": 3353032704,
+    "params_total": 30532122624,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "provenance": {
+    "missing_bytes": "calculated"
+   },
+   "reason_code": "does_not_fit",
+   "skipped_quants": [
+    {
+     "format": "GGUF",
+     "name": "Q8_0",
+     "reason_code": "does_not_fit"
+    },
+    {
+     "format": "GGUF",
+     "name": "Q6_K",
+     "reason_code": "does_not_fit"
+    },
+    {
+     "format": "GGUF",
+     "name": "Q5_K_M",
+     "reason_code": "does_not_fit"
+    },
+    {
+     "format": "GGUF",
+     "name": "Q5_0",
+     "reason_code": "does_not_fit"
+    },
+    {
+     "format": "GGUF",
+     "name": "Q4_K_M",
+     "reason_code": "does_not_fit"
+    }
+   ]
+  }
+ ],
+ "schema_version": 1,
+ "scout_version": "0.1.0",
+ "warnings": [
+  {
+   "code": "swap_not_a_fix",
+   "message": "Aumentar swap não faz modelo maior rodar: pesos paginados para disco derrubam a geração para ~0,1 token/s. Alavancas, nesta ordem: KV em q8_0, menos contexto, bpw menor dentro do piso, modelo menor.",
+   "severity": "info"
+  },
+  {
+   "code": "bandwidth_estimated",
+   "field": "memory.bandwidth_bytes_per_s",
+   "message": "Banda da RAM estimada (fonte: estimate:mts*channels*8).",
+   "severity": "info"
+  },
+  {
+   "code": "calibration_power_mismatch",
+   "field": "inputs.calibration.pools.cpu.power_match",
+   "message": "Calibrado na bateria, perfil balanced; você está na bateria, perfil performance. Usando a medição mais lenta desta máquina (10.00 GB/s efetivos) para não prometer velocidade. Rode `scout bench --run` neste estado para uma estimativa exata.",
+   "severity": "warn"
+  },
+  {
+   "code": "calibration_engine_changed",
+   "field": "inputs.calibration.pools.cpu.engine",
+   "message": "A calibração do pool cpu foi medida com ollama 9.9.9; agora está 10.0.0. Rode `scout bench --run` para recalibrar.",
+   "severity": "warn"
+  },
+  {
+   "code": "slow_prefill_cpu",
+   "message": "Processar o prompt na CPU é lento (3 candidato(s) com a maioria das camadas na CPU: Qwen/Qwen3-4B, Qwen/Qwen2.5-Coder-7B-Instruct, Qwen/Qwen3-8B). Medição de referência: ~12 tokens/s de prefill em AMD Ryzen 5 7520U, 4 núcleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens (ollama 0.17.6 API, 2026-11-15); nesse ritmo, um prompt de 700 tokens leva perto de um minuto. Outra máquina ou outro modelo mudam esse número; o tempo até o primeiro token não é estimado.",
+   "severity": "warn"
+  }
+ ]
+}

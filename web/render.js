@@ -39,6 +39,15 @@ const CONF_REASON = {
   ttft_unspecified: "tempo até o primeiro token não especificado",
   ranked_by_bytes: "ordenado por tamanho em bytes (banda desconhecida)",
   decode_not_applicable: "embeddings não geram tokens",
+  calibration_unstable: "calibração local instável",
+  calibration_other_arch: "calibração medida em outra arquitetura de modelo",
+  calibration_power_mismatch: "calibração gravada em outro estado de energia",
+  calibration_power_unknown: "estado de energia atual não lido; calibração não confirmada",
+  calibration_memory_unverified: "velocidade da memória não verificada; calibração não confirmada",
+  calibration_engine_changed: "motor de inferência mudou de versão desde a calibração",
+  calibration_engine_unknown: "versão do motor de inferência não lida",
+  calibration_kernel_changed: "kernel mudou desde a calibração",
+  calibration_kernel_unknown: "kernel não lido; calibração não confirmada",
 };
 const REJECT = {
   ctx_exceeds_max: "contexto acima do máximo do modelo",
@@ -118,7 +127,9 @@ function hardwareList(sys) {
     items.push(["GPU", h("em", { class: "unknown" }, gpus === null || gpus === undefined ? "não obtido" : "nenhuma detectada")]);
   }
   if (Array.isArray(disks)) disks.forEach((d) => items.push([`Disco ${d.mount ?? ""}`, h("span", {}, [fieldText(d.kind), " · livre ", fieldText(d.free_bytes, fmtGiB), " de ", fieldText(d.total_bytes, fmtGiB)])]));
-  items.push(["Bateria", fieldText(pw.on_battery, (x) => (x ? "na bateria" : "na tomada"))]);
+  items.push(["Bateria", pw.has_battery && pw.has_battery.value === false
+    ? "sem bateria"
+    : fieldText(pw.on_battery, (x) => (x ? "na bateria" : "na tomada"))]);
   const present = Object.entries(rt).filter(([, f]) => fieldVal(f) === true).map(([k]) => k);
   items.push(["Runtimes no PATH", present.length ? present.join(", ") : "nenhum encontrado"]);
   return h("dl", { class: "kv" }, items.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
@@ -138,6 +149,96 @@ function poolsTable(pools) {
   return h("div", { class: "scroll" }, table("Pools de memória", ["Pool", "Total", "Reservado", "Utilizável", "Banda", "Eficiência (eta)"], rows));
 }
 
+// ---------- Calibração local (espelha describe_power de scout/calibration.py) ----------
+const CAL_STATUS = { disabled: "desativada", absent: "ausente (nenhum arquivo de calibração encontrado)", used: "em uso", discarded: "descartada (lida, mas nenhum pool aplicado)" };
+const CAL_ORIGIN = { flag: "opção --calibration", env: "variável SCOUT_CALIBRATION", default: "caminho padrão do sistema", disabled: "desativada por --no-calibration" };
+const POOL_STATUS = { applied: "aplicada", discarded: "descartada", pool_absent: "pool sem calibração" };
+const POWER_MATCH = { same: "mesmo estado de energia", other_state: "outro estado de energia (a entrada de menor banda foi escolhida)", unknown: "não confirmado (energia atual não lida)" };
+const MATCH_EFFECT = { none: "nenhum", discard: "descarta a calibração", cap_medium: "limita a confiança a média", downgrade: "reduz a confiança em um nível" };
+const MATCH_RESULT = { equal: "igual", different: "diferente", unknown: "desconhecido" };
+const MATCH_LAYER = { 1: "camada 1 (máquina)", 2: "camada 2 (memória)", software: "software" };
+const CAL_REASON = {
+  calibration_machine_mismatch: "a máquina é diferente da calibrada",
+  calibration_machine_unknown: "não foi possível confirmar que é a mesma máquina",
+  calibration_memory_unverified: "velocidade da memória não verificada",
+  calibration_schema_outdated: "formato do arquivo de calibração desatualizado",
+  calibration_pool_absent: "sem calibração para este pool",
+  calibration_engine_changed: "versão do motor mudou",
+  calibration_engine_unknown: "versão do motor não lida",
+  calibration_power_mismatch: "estado de energia diferente do gravado",
+  calibration_power_unknown: "estado de energia atual não lido",
+  calibration_kernel_changed: "kernel mudou",
+  calibration_kernel_unknown: "kernel não lido",
+};
+const TOOL = { ollama: "Ollama", "llama-bench": "llama-bench" };
+
+export function describePower(p) {
+  if (!isRecord(p)) return "não lido";
+  const na = Array.isArray(p.not_applicable) ? p.not_applicable : [];
+  const parts = [];
+  if (na.includes("on_ac")) parts.push("sem bateria");
+  else if (typeof p.on_ac === "boolean") parts.push(p.on_ac ? "na tomada" : "na bateria");
+  else parts.push("tomada/bateria não lida");
+  if (na.includes("profile")) parts.push("sem perfil de energia");
+  else if (typeof p.profile === "string" && p.profile) parts.push(`perfil ${p.profile}`);
+  else parts.push("perfil não lido");
+  return parts.join(", ");
+}
+const isRecord = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const matchVal = (v) => (v === null || v === undefined ? "não lido" : typeof v === "boolean" ? (v ? "sim" : "não") : typeof v === "number" ? v.toLocaleString("pt-BR") : String(v));
+
+function calPoolBlock(id, p) {
+  const e = isRecord(p.calibration) ? p.calibration : null;
+  const eng = isRecord(p.engine) ? p.engine : null;
+  const reasons = (Array.isArray(p.reasons) ? p.reasons : []).map((r) => CAL_REASON[r] || String(r));
+  const items = [
+    ["Status", h("strong", {}, POOL_STATUS[p.status] || String(p.status))],
+    ["Motivos", reasons.length ? h("ul", { class: "plain" }, reasons.map((r) => h("li", {}, r))) : "nenhum"],
+  ];
+  if (e) {
+    items.push(
+      ["Data e ferramenta", `${e.date ?? "—"} · ${TOOL[e.tool] || e.tool}`],
+      ["Banda efetiva", e.bandwidth_bytes_per_s == null ? h("em", { class: "unknown" }, "desconhecida") : num(fmtGBps(e.bandwidth_bytes_per_s), "measured")],
+      ["Energia gravada (entrada escolhida)", describePower(e.power)]);
+  }
+  if (eng) {
+    const diff = eng.result === "different" ? " (mudou)" : eng.result === "unknown" ? " (não confirmado)" : "";
+    items.push(["Versão do motor", `gravada ${eng.stored_version ?? "não lida"} × atual ${eng.current_version ?? "não lida"}${diff}`]);
+  }
+  items.push(["Correspondência de energia", POWER_MATCH[p.power_match] || String(p.power_match)]);
+  const av = Array.isArray(p.available_power) ? p.available_power : [];
+  items.push(["Estados gravados", av.length ? h("ul", { class: "plain" }, av.map((a) => h("li", {}, describePower(a)))) : "nenhum"]);
+  return h("div", { class: "cal-pool" }, h("h5", {}, `Pool ${id}`), h("dl", { class: "kv" }, items.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])));
+}
+
+function calMatchTable(match) {
+  const rows = match.filter((m) => isRecord(m) && m.effect !== "none").map((m) =>
+    h("tr", {},
+      h("th", { scope: "row" }, String(m.field)),
+      h("td", {}, MATCH_LAYER[m.layer] || String(m.layer)),
+      h("td", {}, matchVal(m.stored)),
+      h("td", {}, matchVal(m.current)),
+      h("td", {}, MATCH_RESULT[m.result] || String(m.result)),
+      h("td", {}, h("strong", {}, MATCH_EFFECT[m.effect] || String(m.effect)))));
+  if (!rows.length) return h("p", { class: "muted" }, "Nenhum campo de identidade com efeito sobre a calibração.");
+  return h("div", { class: "scroll" }, table("Campos que mudaram o efeito da calibração", ["Campo", "Camada", "Gravado", "Atual", "Resultado", "Efeito"], rows));
+}
+
+export function calibrationBlock(doc) {
+  const c = doc.inputs && doc.inputs.calibration;
+  if (!isRecord(c)) return null;
+  const kids = [h("h3", {}, "Calibração local"),
+    h("p", {}, "Status: ", h("strong", {}, CAL_STATUS[c.status] || String(c.status)), " · origem: ", CAL_ORIGIN[c.origin] || String(c.origin), ".")];
+  if (c.status === "used" || c.status === "discarded") {
+    kids.push(h("p", {}, "Energia atual: ", describePower(doc.inputs.power), "."));
+  }
+  if (c.status === "absent") kids.push(h("p", { class: "muted" }, "Sem calibração, os tokens/s usam a eficiência padrão. Rode ", h("code", {}, "scout bench --run"), " para calibrar."));
+  const pools = isRecord(c.pools) ? Object.entries(c.pools) : [];
+  for (const [id, p] of pools) if (isRecord(p)) kids.push(calPoolBlock(id, p));
+  if (Array.isArray(c.match) && c.match.length) kids.push(calMatchTable(c.match));
+  return h("div", { class: "calibration" }, kids);
+}
+
 function warningsList(ws) {
   if (!ws.length) return h("p", {}, "Nenhum aviso.");
   return h("ul", { class: "warnings" }, ws.map((w) => h("li", { class: "warn-" + (w.severity === "warn" ? "warn" : "info") }, h("strong", {}, w.severity === "warn" ? "⚠ Atenção: " : "Nota: "), String(w.message))));
@@ -154,7 +255,10 @@ export function renderDiagnostic(doc, kind) {
   const sys = kind === "system" ? doc : doc.inputs.system;
   const kids = [h("h3", {}, "Hardware"), hardwareList(sys)];
   if (kind === "feasibility") {
-    kids.push(poolsTable(doc.pools), h("h3", {}, "Avisos"), warningsList(doc.warnings));
+    kids.push(poolsTable(doc.pools));
+    const cal = calibrationBlock(doc);
+    if (cal) kids.push(cal);
+    kids.push(h("h3", {}, "Avisos"), warningsList(doc.warnings));
     const t = doc.inputs.tuning;
     if (t) kids.push(h("p", { class: "muted" }, `Eficiência ${t.source === "calibrated" ? "calibrada nesta máquina" : "padrão (não calibrada)"}: GPU ${t.eta_gpu}, CPU ${t.eta_cpu}.`));
   } else {

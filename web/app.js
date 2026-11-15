@@ -163,6 +163,8 @@ function init() {
   $("btn-demo4").addEventListener("click", () => loadFixture("demo-feasibility-falta.json"));
   $("btn-demo5").addEventListener("click", () => loadFixture("demo-feasibility-nota.json"));
   $("btn-demo3").addEventListener("click", () => loadFixture("demo-system.json"));
+  $("btn-demo6").addEventListener("click", () => loadFixture("demo-feasibility-calibracao.json"));
+  $("btn-demo7").addEventListener("click", () => loadFixture("demo-feasibility-calibracao-na.json"));
   $("btn-live").addEventListener("click", () => live(false));
   $("btn-refresh").addEventListener("click", () => live(true));
   $("port").value = String(api.getPort()); // porta do fragment tem precedência sobre o padrão do campo

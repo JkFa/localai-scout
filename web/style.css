@@ -69,3 +69,6 @@ ul.plain, ul.warnings { padding-left: 1.1rem; margin: .3rem 0; }
 @media (max-width: 40rem) { .kv { grid-template-columns: 1fr; } }
 ul.notes { list-style: none; margin: .3rem 0 0; padding: .2rem .4rem; font-size: .85rem; color: var(--info-fg); background: var(--info-bg); border-radius: 3px; }
 .warnings li.warn-warn { background: var(--warn-bg); color: var(--warn-fg); border-left: 4px solid var(--warn-fg); padding: .2rem .5rem; margin: .3rem 0; list-style: none; }
+
+.cal-pool { margin: .5rem 0 1rem; padding-left: .75rem; border-left: 3px solid var(--muted); }
+.cal-pool h5 { margin: 0 0 .25rem; font-size: 1rem; }
