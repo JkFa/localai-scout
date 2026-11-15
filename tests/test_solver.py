@@ -222,6 +222,15 @@ def test_quality_floor_beats_fit(systems, catalog):
     assert_valid("feasibility.schema.json", out)
 
 
+def assert_embeddings_no_decode(c):
+    """Candidato cuja única tarefa avaliada é embeddings: sem tokens/s de decode."""
+    assert c["tokens_per_s_est"] is None
+    assert "decode_not_applicable" in c["confidence_reasons"]
+    for bad in ("ranked_by_bytes", "eta_default", "bandwidth_estimated", "bandwidth_unknown"):
+        assert bad not in c["confidence_reasons"], bad
+    assert "decode_not_applicable" in {n["code"] for n in c.get("notes", [])}
+
+
 # ---------------------------------------------------------------- perfis (valores calculados à mão)
 def test_profile1_cpu8(systems, catalog):
     out = run(systems["cpu8"], catalog)
@@ -247,7 +256,8 @@ def test_profile1_cpu8(systems, catalog):
     emb = cand(out, "test/embed-110m")
     assert emb["quant"]["name"] == "F16"       # maior quant viável, não a mais rápida
     assert emb["weights_bytes"] == 220_000_000
-    assert emb["tokens_per_s_est"] == pytest.approx(58.17, rel=1e-3)   # 220e6/(21.328e9*0.6) = 0.017192 s
+    # embeddings não fazem decode: tokens/s null + nota/motivo decode_not_applicable (PROMPT.md, Throughput)
+    assert_embeddings_no_decode(emb)
 
     # 7B: nem o Q4_K_M cabe. 4_410_000_000 + 1_073_741_824 + 563_840_000 = 6_047_581_824
     # falta = 6_047_581_824 - floor(0.95 * 5_589_934_592 = 5_310_437_862.4) = 737_143_962
@@ -332,7 +342,10 @@ def test_profile4_apple_unified_single_pool(systems, catalog):
     assert [(p["id"], p["usable_bytes"]) for p in out["pools"]] == [("unified", 12_884_901_888)]
     for c in out["candidates"]:
         assert [p["pool"] for p in c["by_pool"]] == ["unified"]
-        assert c["tokens_per_s_est"] is not None and c["tokens_per_s_est"] > 0
+        if c["model"]["tasks"] == ["embeddings"]:
+            assert_embeddings_no_decode(c)
+        else:
+            assert c["tokens_per_s_est"] is not None and c["tokens_per_s_est"] > 0
         assert c["n_threads"] == 8                     # núcleos de performance, não 12
     d = cand(out, "test/dense-7b")
     # 9_287_581_824 <= 0.8 * 12_884_901_888 = 10_307_921_510
@@ -606,7 +619,11 @@ def test_unknown_bandwidth_gives_none_tokens_ordered_by_bytes(systems, catalog):
     #   7B  Q8_0   7_650_000_000
     assert [c["model"]["id"] for c in out["candidates"]] == [
         "test/embed-110m", "test/tiny-1b", "test/moe-30b-a3b", "test/dense-7b"]
-    assert all("ranked_by_bytes" in c["confidence_reasons"] for c in out["candidates"])
+    for c in out["candidates"]:
+        if c["model"]["tasks"] == ["embeddings"]:
+            assert_embeddings_no_decode(c)          # exceção: motivo é decode_not_applicable
+        else:
+            assert "ranked_by_bytes" in c["confidence_reasons"]
     assert_valid("feasibility.schema.json", out)
 
 

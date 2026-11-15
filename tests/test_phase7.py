@@ -66,13 +66,19 @@ def test_f4_unknown_cpu_bw_hybrid_over_cpu_only(systems, catalog):
 def test_f4_order_unchanged_when_tokens_known(systems, catalog):
     for profile in ("cpu8", "rtx3060", "ddr5_64", "apple24", "rx7800xt"):
         out = run(systems[profile], catalog)
-        assert all(c["tokens_per_s_est"] is not None for c in out["candidates"])
-        assert all("ranked_by_bytes" not in c["confidence_reasons"] for c in out["candidates"]), profile
+        for c in out["candidates"]:
+            if c["model"]["tasks"] == ["embeddings"]:       # exceção explícita: sem decode
+                assert c["tokens_per_s_est"] is None and "decode_not_applicable" in c["confidence_reasons"]
+            else:
+                assert c["tokens_per_s_est"] is not None, profile
+            assert "ranked_by_bytes" not in c["confidence_reasons"], profile
         sorted_ok(out["candidates"])
     # ddr5_64 conhecido: embed 58.. > 1B > MoE 21.85 > 7B 7.03 (por tokens/s, não por id)
+    # (embeddings tem tokens/s null: vai por último dentro do tier)
     order = [c["model"]["id"] for c in run(systems["ddr5_64"], catalog)["candidates"]]
     tps = {c["model"]["id"]: c["tokens_per_s_est"] for c in run(systems["ddr5_64"], catalog)["candidates"]}
-    assert order == sorted(order, key=lambda i: -tps[i])
+    assert order == ["test/tiny-1b", "test/moe-30b-a3b", "test/dense-7b", "test/embed-110m"]
+    assert order[:3] == sorted(order[:3], key=lambda i: -tps[i]) and tps["test/embed-110m"] is None
 
 
 def test_f4_known_placement_choice_still_by_tokens(systems, catalog):
@@ -222,7 +228,9 @@ def test_r3_no_note_when_limit_does_not_act(systems, catalog):
     # catálogo de teste puro: nenhuma quant acima do limiar depende de híbrido
     for profile in ("cpu8", "rtx3060", "ddr5_64", "apple24", "rx7800xt"):
         out = run(systems[profile], catalog)
-        assert all(notes(c) == [] for c in out["candidates"]), profile
+        assert all(CODE not in {n["code"] for n in notes(c)} for c in out["candidates"]), profile
+        # única nota esperada: decode_not_applicable nos candidatos só de embeddings
+        assert all({n["code"] for n in notes(c)} <= {"decode_not_applicable"} for c in out["candidates"]), profile
     # limiar acima de todas as quants do 7B/F16 também não gera nota
     out = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning={**TUNING, "max_bpw_offload": 16.0})
     assert notes(cand(out, "test/fat-7b")) == []
@@ -253,3 +261,70 @@ def test_r3_markdown_shows_the_note(tmp_path, capsys):
     md = capsys.readouterr().out
     assert msg in md
     assert markdown_numbers_missing_from_json(md, doc) == []
+
+
+# ================================================================ embeddings sem decode + slow_prefill_cpu
+def warn_codes(out):
+    return {w["code"] for w in out["warnings"]}
+
+
+def test_embeddings_only_candidates_have_no_decode_in_every_profile(systems, catalog):
+    for profile in ("cpu8", "rtx3060", "ddr5_64", "apple24", "rx7800xt"):
+        out = run(systems[profile], catalog)
+        emb = cand(out, "test/embed-110m")
+        assert emb["tokens_per_s_est"] is None and "decode_not_applicable" in emb["confidence_reasons"], profile
+        assert "ranked_by_bytes" not in emb["confidence_reasons"], profile
+        assert "decode_not_applicable" in {n["code"] for n in notes(emb)}
+        # não afeta os demais: o 1B (chat) segue com tokens/s
+        assert cand(out, "test/tiny-1b")["tokens_per_s_est"] is not None
+        assert_valid("feasibility.schema.json", out)
+
+
+def test_embeddings_with_other_task_in_intent_keeps_decode_for_non_embedding_models(systems, catalog):
+    # modelo de duas tarefas avaliado também para chat: não é "só embeddings"
+    cat = deep(catalog)
+    next(m for m in cat["models"] if m["id"] == "test/embed-110m")["tasks"] = ["embeddings", "chat"]
+    cat["models"] = [m for m in cat["models"] if m["id"] == "test/embed-110m"]
+    c = cand(solve(deep(systems["rtx3060"]), cat, Intent(tasks=("chat", "embeddings"), ctx=4096), dict(TUNING)),
+             "test/embed-110m")
+    assert c["tokens_per_s_est"] is not None and "decode_not_applicable" not in c["confidence_reasons"]
+
+
+def test_slow_prefill_cpu_warning(systems, catalog):
+    # cpu_only com modelo de chat => aviso warn
+    for profile in ("cpu8", "ddr5_64"):
+        out = run(systems[profile], catalog)
+        w = [x for x in out["warnings"] if x["code"] == "slow_prefill_cpu"]
+        assert len(w) == 1 and w[0]["severity"] == "warn", profile
+    # GPU-majoritário / gpu_full: sem aviso
+    assert "slow_prefill_cpu" not in warn_codes(run(systems["rtx3060"], catalog))
+    # só embeddings na CPU: sem aviso
+    emb = go(systems["cpu8"], catalog, tasks=("embeddings",))
+    assert emb["candidates"] and "slow_prefill_cpu" not in warn_codes(emb)
+
+
+def test_slow_prefill_cpu_hybrid_majority_on_cpu(systems, catalog):
+    # VRAM usable 3e9 => 7B Q8_0 híbrido com poucas camadas na GPU:
+    # n_gpu = floor((2_850_000_000 - 1_073_741_824 - 563_840_000)/239_062_500) = 5 < 27 na CPU
+    s = deep(systems["rtx3060"])
+    s["gpus"]["value"][0]["vram_free_bytes"]["value"] = 3_600_000_000      # usable = 3_000_000_000
+    out = go(s, catalog, tasks=("chat",))
+    d = cand(out, "test/dense-7b")
+    assert d["placement"] == "hybrid" and d["n_gpu_layers"] == 5
+    assert "slow_prefill_cpu" in warn_codes(out)
+
+
+def test_slow_prefill_message_number_comes_from_tuning_measurement(systems, catalog):
+    import re
+
+    ref = {"tokens_per_s": 50, "measured_on": "maquina de teste", "tool": "ferramenta", "date": "2026-01-01",
+           "power": "ac"}
+    plain = next(w for w in go(systems["cpu8"], catalog)["warnings"] if w["code"] == "slow_prefill_cpu")
+    # sem prefill_reference: nenhuma velocidade nem tamanho de prompt ("~N tokens/s", "um prompt de N tokens");
+    # o único dígito permitido é a contagem de candidatos
+    assert not re.search(r"~|\d\s*tokens|minuto", plain["message"]), plain["message"]
+    out = go(systems["cpu8"], catalog, tuning={**TUNING, "prefill_reference": ref})
+    msg = next(w for w in out["warnings"] if w["code"] == "slow_prefill_cpu")["message"]
+    # ~50 tokens/s ; N = 50 * 60 = 3000 (2 algarismos significativos)
+    assert "50" in msg and re.search(r"3[ .]?000", msg)
+    assert out["inputs"]["tuning"]["prefill_reference"] == ref
