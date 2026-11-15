@@ -410,21 +410,17 @@ def _official(url: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in OFFICIAL_DOMAINS)
 
 
-def gpu_bandwidth_lookup(name: str | None, table: dict | None) -> tuple[int | None, str | None, str | None]:
-    """-> (bytes/s, source_url, motivo_sem_valor). Substring exata, case-insensitive; só casamento único.
-    Entrada sem fonte oficial (nvidia.com/amd.com/intel.com) ou sem inteiro positivo é ignorada."""
-    if not name or not isinstance(table, dict):
-        return None, None, "no_table_or_name"
-    hits = []
-    for e in table.get("entries") or []:
-        try:
-            ok = (isinstance(e["bandwidth_bytes_per_s"], int) and e["bandwidth_bytes_per_s"] > 0
-                  and _official(e["source_url"]) and e["match"].strip().lower() in name.lower()
-                  and e["match"].strip())
-        except (KeyError, TypeError, AttributeError):
-            ok = False
-        if ok:
-            hits.append(e)
-    if len(hits) == 1:
-        return hits[0]["bandwidth_bytes_per_s"], hits[0]["source_url"], None
-    return None, None, "ambiguous_table_match" if hits else "no_table_match"
+def gpu_table_lookup(name: str | None, vram_total: int | None, table: dict | None) -> tuple[int | None, list[str]]:
+    """Tabela `gpu` de bandwidth_tables.json, chave exata `nome|vram_bytes`. -> (bytes/s, source_urls).
+    Entrada sem inteiro positivo ou sem fonte oficial (nvidia.com/amd.com/intel.com) é ignorada.
+    Sem casamento exato: (None, []). Nenhuma fórmula de fallback."""
+    if not name or vram_total is None or not isinstance(table, dict):
+        return None, []
+    e = (table.get("gpu") or {}).get(f"{name}|{vram_total}")
+    if not isinstance(e, dict):
+        return None, []
+    bw, urls = e.get("bandwidth_bytes_s"), e.get("source_url")
+    urls = [urls] if isinstance(urls, str) else (urls if isinstance(urls, list) else [])
+    if not isinstance(bw, int) or isinstance(bw, bool) or bw <= 0 or not urls or not all(_official(u) for u in urls):
+        return None, []
+    return bw, urls

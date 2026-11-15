@@ -587,3 +587,19 @@ interpretação.
 - O markdown da CLI mostra as notes na coluna de nota do candidato.
 - PROMPT.md M1 agora contém, no algoritmo de candidatos, o desempate F4, o
   limiar Fa e a nota R3, e a fórmula de `n_gpu` com o teto 0,95 (Q6).
+
+## 2026-11-15 — R4 etapa 2 (coletor): banda de GPU
+
+- `data/gpu_bandwidth.json` removido (e o código que o lia). A seção `gpu` de `data/bandwidth_tables.json` é chaveada por
+  `nome exato|VRAM total em bytes` (a RTX 3060 de 8 GB, 128-bit, não casa com a de 12 GB). Casou: `source: "table"`, high.
+- Única entrada: RTX 3060 12 GB, 192 bit, 15 Gbps, 360 GB/s. Fontes: nvidia.com/en-us/geforce/news/game-on-you-asked-we-answered-qa/
+  ("192-bit and GDDR6 (at 15 Gbps), delivering 360GB/s") e nvidianews.nvidia.com (192-bit, 12GB GDDR6), verificadas em 2026-11-15.
+  **Pendência:** `smi_name_verified: false`. "NVIDIA GeForce RTX 3060" é o nome candidato e a VRAM 12288 MiB (12884901888 bytes) é
+  suposta; a entrada pode NÃO casar na coleta real até alguém confirmar com `nvidia-smi --query-gpu=name,memory.total`.
+- RX 7800 XT fora: amd.com não carregou (timeouts); a página oficial carregada (ir.amd.com) traz 256-bit e 16 GB, sem
+  Gbps nem GB/s. Os 624 GB/s só vieram de resumo de busca, não de página citável.
+- Fallback por fórmula DESLIGADO: nenhum multiplicador gravado; sem casamento, banda null/low e o desempate por bytes (F4) assume.
+  **Pendência:** validar `clocks.max.memory` do nvidia-smi contra os 360 GB/s da 3060 e o equivalente do rocm-smi.
+- iGPU: `bandwidth_bytes_per_s` = banda da RAM do sistema, mesma confiança, `source: "igpu_shares_ram"`; RAM null => null.
+  Detecção: AMD com um único cartão em /sys/class/drm sem `mem_info_vram_vendor` (amdgpu só o expõe em GPU discreta; na
+  Mendocino desta máquina o arquivo não existe). Heurística: com mais de um cartão AMD não classifica (trata como discreta).

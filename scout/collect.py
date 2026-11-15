@@ -281,24 +281,21 @@ def _memory_rest(mem: dict, dmi: dict | None, unified: bool | None, platform_not
     return mem
 
 
-def _load_gpu_table() -> dict | None:
-    try:
-        return json.loads((DATA / "gpu_bandwidth.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
-def _gpu_entry(i: int, vendor: str | None, g: dict, src: str, vendor_src: str) -> dict:
+def _gpu_entry(i: int, vendor: str | None, g: dict, src: str, vendor_src: str, ram_bw: Field | None = None) -> dict:
     cc = g.get("cc")
     caps = P.gpu_caps_from_cc(cc) if vendor == "nvidia" else {"bf16": None, "fp8": None, "flash_attention": None}
     no_cc = "compute capability indisponível" if vendor == "nvidia" else "só derivável de CUDA compute capability"
     backend = {"nvidia": "cuda", "amd": "rocm"}.get(vendor or "")
-    bw_reason = "sem sonda local de clock de memória e largura de barramento; sem tabela por nome de GPU"
-    bw, url, why = P.gpu_bandwidth_lookup(g.get("name"), _load_gpu_table())
-    if bw is not None:
-        bw_field = field(bw, "table", "medium", f"data/gpu_bandwidth.json; fonte: {url}")
-    elif why == "ambiguous_table_match":
-        bw_field = missing("ambiguous_table_match")
+    bw_reason = "GPU fora de data/bandwidth_tables.json (nome + VRAM); sem fórmula de fallback"
+    bw, urls = P.gpu_table_lookup(g.get("name"), g.get("vram_total"), _load_bw_table())
+    if g.get("integrated"):  # iGPU usa a RAM do sistema: mesma banda, mesma confiança
+        if ram_bw and ram_bw.get("value") is not None:
+            bw_field = field(ram_bw["value"], "igpu_shares_ram", ram_bw["confidence"],
+                             f"banda da RAM do sistema (origem: {ram_bw['source']})")
+        else:
+            bw_field = field(None, "igpu_shares_ram", "low", "banda da RAM do sistema indisponível")
+    elif bw is not None:
+        bw_field = field(bw, "table", "high", "data/bandwidth_tables.json; fonte: " + " ; ".join(urls))
     else:
         bw_field = missing(bw_reason)
     entry = {
@@ -323,7 +320,7 @@ def _gpu_entry(i: int, vendor: str | None, g: dict, src: str, vendor_src: str) -
     return entry
 
 
-def collect_gpus(system: str, probes: Probes) -> Field:
+def collect_gpus(system: str, probes: Probes, ram_bw: Field | None = None) -> Field:
     gpus: list[tuple[str | None, dict, str, str]] = []
     nv = run_cmd(["nvidia-smi", "--query-gpu=index,name,memory.total,memory.free,driver_version,compute_cap",
                   "--format=csv,noheader,nounits"], probes, timeout=10.0)
@@ -337,10 +334,19 @@ def collect_gpus(system: str, probes: Probes) -> Field:
                  probes, timeout=10.0)
     for g in P.parse_rocm_smi_json(rc or ""):
         gpus.append(("amd", g, "rocm-smi", "rocm-smi"))
+    if system == "linux" and any(v == "amd" for v, *_ in gpus):
+        cards = _read_drm(probes) or []
+        amd = [c for c in cards if (c.get("vendor") or "").lower() == "0x1002"]
+        # amdgpu só expõe mem_info_vram_vendor em GPU discreta; ausente em APU (iGPU)
+        if len(amd) == 1 and not amd[0].get("has_vram_vendor"):
+            gpus = [(v, {**g, "integrated": True} if v == "amd" else g, s_, vs) for v, g, s_, vs in gpus]
     if not gpus and system == "linux":
         cards = _read_drm(probes)
         if cards is not None:
+            amd = [c for c in cards if (c.get("vendor") or "").lower() == "0x1002"]
             for g in P.parse_drm_cards(cards):
+                if g["vendor"] == "amd" and len(amd) == 1 and not amd[0].get("has_vram_vendor"):
+                    g["integrated"] = True
                 gpus.append((g["vendor"], g, "sysfs:drm", "sysfs:drm"))
             if not gpus:
                 return field([], "sysfs:drm", "medium", "nenhuma GPU em /sys/class/drm e sem nvidia-smi/rocm-smi")
@@ -351,10 +357,10 @@ def collect_gpus(system: str, probes: Probes) -> Field:
     if not gpus:
         return field(None, "none: nvidia-smi, rocm-smi e fontes do sistema indisponíveis", "low")
     src = "+".join(sorted({g[2] for g in gpus}))
-    return field([_gpu_entry(i, v, g, s, vs) for i, (v, g, s, vs) in enumerate(gpus)], src, "high")
+    return field([_gpu_entry(i, v, g, s, vs, ram_bw) for i, (v, g, s, vs) in enumerate(gpus)], src, "high")
 
 
-def _read_drm(probes: Probes) -> list[dict[str, str | None]] | None:
+def _read_drm(probes: Probes) -> list[dict[str, Any]] | None:
     root = "/sys/class/drm"
     try:
         names = sorted((n for n in os.listdir(root) if re.fullmatch(r"card\d+", n)), key=lambda n: int(n[4:]))
@@ -370,7 +376,8 @@ def _read_drm(probes: Probes) -> list[dict[str, str | None]] | None:
                     return fh.read(64).strip()
             except OSError:
                 return None
-        cards.append({"vendor": rd("vendor"), "vram_total": rd("mem_info_vram_total"), "vram_used": rd("mem_info_vram_used")})
+        cards.append({"vendor": rd("vendor"), "vram_total": rd("mem_info_vram_total"), "vram_used": rd("mem_info_vram_used"),
+                      "has_vram_vendor": os.path.exists(f"{root}/{n}/device/mem_info_vram_vendor")})
     return cards
 
 
@@ -589,7 +596,7 @@ def collect(dmidecode_file: str | None = None) -> dict:
     if mem is None:
         mem = _memory_rest({"ram_total_bytes": missing("não coletado"), "swap_total_bytes": missing("não coletado")},
                            None, unified=None, platform_note="derived:platform")
-    gpus = _guard(probes, "gpus", lambda: collect_gpus(system, probes)) or field(None, "none: coleta de GPU falhou", "low")
+    gpus = _guard(probes, "gpus", lambda: collect_gpus(system, probes, mem["bandwidth_bytes_per_s"])) or field(None, "none: coleta de GPU falhou", "low")
     disks = _guard(probes, "disks", lambda: collect_disks(system, probes)) or field(None, "none: coleta de disco falhou", "low")
     power = _guard(probes, "power", lambda: collect_power(system, probes)) or {
         "has_battery": missing(why), "on_battery": missing(why)}
