@@ -18,12 +18,15 @@
     },
     "inputs": {
       "type": "object",
-      "required": ["intent", "system", "catalog", "tuning"],
+      "required": ["intent", "system", "catalog", "tuning", "calibration"],
       "additionalProperties": false,
+      "allOf": [
+        {"if": {"properties": {"calibration": {"properties": {"status": {"enum": ["used", "discarded"]}}}}, "required": ["calibration"]},
+         "then": {"required": ["power"]}, "else": {"not": {"required": ["power"]}}}
+      ],
       "properties": {
-        "power": {"type": "object", "description": "Estado de energia ATUAL lido pela CLI, presente quando há calibração (bench_spec.md).",
-          "required": ["on_ac", "profile"], "additionalProperties": false,
-          "properties": {"on_ac": {"type": ["boolean", "null"]}, "profile": {"type": ["string", "null"]}}},
+        "power": {"$ref": "calibration.schema.json#/$defs/power", "description": "Estado de energia ATUAL lido pela CLI; presente quando inputs.calibration.status é used ou discarded (calibration_store_spec.md §5)."},
+        "calibration": {"$ref": "calibration.schema.json#/$defs/echo", "description": "Calibração local: origem, status, casamento campo a campo e entrada escolhida por pool. Nunca o caminho do arquivo."},
         "intent": {"$ref": "#/$defs/intent"},
         "system": {"$ref": "system.schema.json"},
         "catalog": {
@@ -46,9 +49,6 @@
             "eta_cpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
             "source": {"enum": ["default", "calibrated"], "description": "calibrated = ajustado por `scout bench --run` nesta máquina."},
             "max_bpw_offload": {"type": "number", "exclusiveMinimum": 0, "description": "Acima deste bpw o placement hybrid não é avaliado (m7_fixes.md Fa)."},
-            "calibration": {"type": "object", "description": "tuning.calibration.<pool> gravado por scout bench --run (schemas/bench_spec.md).",
-              "propertyNames": {"$ref": "#/$defs/pool_id"},
-              "additionalProperties": {"$ref": "#/$defs/calibration"}},
             "prefill_reference": {"type": "object", "description": "Medição real de prefill em CPU usada no aviso slow_prefill_cpu. Nunca estimativa.",
               "required": ["tokens_per_s", "measured_on", "tool", "date"], "additionalProperties": false,
               "properties": {"tokens_per_s": {"type": "number", "exclusiveMinimum": 0}, "measured_on": {"type": "string", "minLength": 1},
@@ -96,20 +96,7 @@
       "description": "Mapa nome-do-campo-numérico -> proveniência. Todo número exibível do objeto tem entrada aqui.",
       "additionalProperties": {"$ref": "#/$defs/provenance_value"}
     },
-    "calibration": {
-      "type": "object",
-      "description": "Formato do coletor; campos além destes são preservados.",
-      "required": ["bandwidth_bytes_per_s", "overhead_s_per_token", "form", "stable"],
-      "properties": {
-        "bandwidth_bytes_per_s": {"type": "integer", "minimum": 1},
-        "overhead_s_per_token": {"type": "number", "minimum": 0},
-        "form": {"enum": ["1p", "2p"]},
-        "stable": {"type": "boolean"},
-        "power": {"type": "object", "properties": {"on_ac": {"type": ["boolean", "null"]}, "profile": {"type": ["string", "null"]}}},
-        "prefill_tokens_per_s": {"type": ["number", "null"], "exclusiveMinimum": 0},
-        "models": {"type": "array", "items": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}, "architecture": {"type": ["string", "null"]}}}}
-      }
-    },
+    "calibration": {"$ref": "calibration.schema.json#/$defs/pool_calibration"},
     "intent": {
       "type": "object",
       "required": ["tasks", "ctx", "commercial_use", "batch", "kv_quant"],
@@ -210,11 +197,11 @@
         "notes": {"type": "array", "description": "Opcional (m7_fixes.md R3). Decisões do solver que afetaram este candidato sem gerar rejeição; ordem = ordem de avaliação das quants.",
           "items": {"type": "object", "required": ["code", "message"], "additionalProperties": false,
             "properties": {"code": {"enum": ["offload_skipped_above_bpw", "decode_not_applicable"]}, "message": {"type": "string", "minLength": 1}}}},
-        "tokens_per_s_basis": {"enum": ["calibration", "eta", "mixed"], "description": "calibration = todos os trechos com camadas usam tuning.calibration; eta = nenhum; mixed = híbrido com um trecho de cada."},
+        "tokens_per_s_basis": {"enum": ["calibration", "eta", "mixed"], "description": "calibration = todos os trechos com camadas usam a entrada aplicada de inputs.calibration; eta = nenhum; mixed = híbrido com um trecho de cada."},
         "ctx_effective": {"type": "integer", "minimum": 1, "description": "Só em modelos avaliados apenas para embeddings: min(intent.ctx, ctx_max), o contexto usado no KV e no buffer (DECISIONS.md)."},
         "ttft_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null enquanto a fórmula de prefill não for especificada (DECISIONS.md)."},
         "confidence": {"$ref": "#/$defs/confidence"},
-        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified", "ranked_by_bytes", "decode_not_applicable", "calibration_unstable", "calibration_other_arch", "calibration_power_mismatch", "calibration_power_unknown"]}},
+        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified", "ranked_by_bytes", "decode_not_applicable", "calibration_unstable", "calibration_other_arch", "calibration_power_mismatch", "calibration_power_unknown", "calibration_memory_unverified", "calibration_engine_changed", "calibration_engine_unknown", "calibration_kernel_changed", "calibration_kernel_unknown"]}},
         "blocked": {"type": "boolean"},
         "blocked_reason": {"enum": ["non_commercial", "license_unknown", null]},
         "primary_for": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/task"}, "description": "Tarefas para as quais este é a recomendação principal, decidido pelo solver. Candidato blocked tem sempre []."},
@@ -256,7 +243,7 @@
       "required": ["code", "severity", "message"],
       "additionalProperties": false,
       "properties": {
-        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool", "quality_preference", "slow_prefill_cpu", "calibration_power_mismatch"]},
+        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool", "quality_preference", "slow_prefill_cpu", "calibration_power_mismatch", "calibration_power_unknown", "calibration_machine_mismatch", "calibration_machine_unknown", "calibration_schema_outdated", "calibration_engine_changed", "calibration_engine_unknown", "calibration_kernel_changed", "calibration_kernel_unknown", "calibration_memory_unverified"]},
         "severity": {"enum": ["info", "warn"]},
         "message": {"type": "string", "minLength": 1},
         "field": {"type": "string", "description": "Caminho JSON do campo relacionado, ex. 'memory.speed_mts'."}

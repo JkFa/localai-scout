@@ -323,6 +323,14 @@
       "eta_gpu": 0.75,
       "eta_cpu": 0.6,
       "source": "default"
+    },
+    "calibration": {
+      "origin": "default",
+      "status": "absent",
+      "calibration_schema_version": 1,
+      "store": null,
+      "match": [],
+      "pools": {}
     }
   },
   "pools": [

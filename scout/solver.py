@@ -20,6 +20,7 @@ from typing import Any
 
 from scout import __version__
 from scout import estimate as E
+from scout.calibration import CalibrationInput, evaluate as _evaluate_calibration, pick_gpu
 
 TASKS: tuple[str, ...] = ("chat", "code", "embeddings", "vlm", "stt", "diffusion")
 PLACEMENTS: tuple[str, ...] = ("gpu_full", "hybrid", "cpu_only")
@@ -65,10 +66,10 @@ class Pool:
     eta: float
     low_confidence: bool
     provenance: dict[str, str]
-    # Calibração medida por `scout bench` (tuning.calibration.<id>) e como o
-    # estado de energia atual se compara ao dela: "same" | "mismatch" | "unknown".
+    # Entrada de calibração aplicada a este pool (calibration_store_spec.md §4)
+    # e os motivos de confiança que ela passa aos candidatos. None -> eta.
     cal: dict | None = None
-    cal_power: str | None = None
+    cal_reasons: frozenset[str] = frozenset()
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -218,7 +219,7 @@ def _build_gpu_pool(system: dict, eta_gpu: float, warnings: list[dict[str, Any]]
             "VRAM total da GPU não detectada; GPU fora do plano.",
             f"gpus.value[{min(g['index'] for g in gpus)}].vram_total_bytes"))
         return None
-    chosen = sorted(with_vram, key=lambda g: (-_field(g["vram_total_bytes"])[0], g["index"]))[0]
+    chosen = pick_gpu(with_vram)  # mesma escolha de scout.calibration.machine_identity
     idx = chosen["index"]
     if len(gpus) > 1:
         warnings.append(_warning(
@@ -607,14 +608,7 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
     if low_hw:
         reasons.add("hardware_low_confidence")
 
-    if fallback or low_hw:
-        confidence = "low"
-    elif reasons & MEDIUM_CAP_REASONS:
-        confidence = "medium"
-    else:
-        confidence = "high"
-    if "calibration_power_mismatch" in reasons:  # rebaixa um nível
-        confidence = {"high": "medium", "medium": "low", "low": "low"}[confidence]
+    confidence = combine_confidence(reasons, fallback or low_hw)
 
     ttft = _ttft(m, a, intent) if decode_applies else None
     if ttft is not None:
@@ -665,7 +659,28 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
 MEDIUM_CAP_REASONS = frozenset({
     "eta_default", "bandwidth_estimated", "bandwidth_unknown",
     "calibration_unstable", "calibration_other_arch", "calibration_power_unknown",
+    "calibration_engine_unknown", "calibration_kernel_unknown", "calibration_memory_unverified",
 })
+# Cada motivo distinto desce um nível, depois dos tetos, com piso low (§4).
+DOWNGRADE_REASONS: tuple[str, ...] = (
+    "calibration_power_mismatch", "calibration_engine_changed", "calibration_kernel_changed",
+)
+_ONE_BELOW = {"high": "medium", "medium": "low", "low": "low"}
+
+
+def combine_confidence(reasons: set[str] | frozenset[str], low: bool) -> str:
+    """Parte de high (ou low, se pesos por fallback/hardware low); tetos limitam a
+    medium; depois cada motivo de rebaixamento desce um nível, piso low."""
+    if low:
+        confidence = "low"
+    elif reasons & MEDIUM_CAP_REASONS:
+        confidence = "medium"
+    else:
+        confidence = "high"
+    for r in DOWNGRADE_REASONS:
+        if r in reasons:
+            confidence = _ONE_BELOW[confidence]
+    return confidence
 
 
 def norm_arch(a: Any) -> str | None:
@@ -683,10 +698,7 @@ def _calibration_reasons(m: dict, cal_pools: list[Pool]) -> set[str]:
         cal = p.cal or {}
         if cal.get("stable") is not True:
             reasons.add("calibration_unstable")
-        if p.cal_power == "mismatch":
-            reasons.add("calibration_power_mismatch")
-        elif p.cal_power != "same":
-            reasons.add("calibration_power_unknown")
+        reasons |= p.cal_reasons  # energia, motor, kernel, camada 2 (calibration.evaluate)
         models = [x for x in cal.get("models") or [] if isinstance(x, dict)]
         ids = {x.get("id") for x in models}
         archs = {norm_arch(x.get("architecture")) for x in models} - {None}
@@ -822,57 +834,30 @@ def _catalog_sha256(catalog: dict) -> str:
 # --------------------------------------------------------------------------
 
 
-def _power_compare(cal_power: Any, now: dict | None) -> str:
-    """"same" só se on_ac e profile batem e são conhecidos dos dois lados;
-    "mismatch" se algum valor conhecido dos dois lados difere; senão "unknown"."""
-    cal_power = cal_power if isinstance(cal_power, dict) else {}
-    now = now or {}
-    keys = ("on_ac", "profile")
-    known = [k for k in keys if cal_power.get(k) is not None and now.get(k) is not None]
-    if any(cal_power[k] != now[k] for k in known):
-        return "mismatch"
-    return "same" if len(known) == len(keys) else "unknown"
-
-
-def _attach_calibration(pool_list: list[Pool], tuning: dict, power: dict | None
-                        ) -> tuple[list[Pool], list[dict[str, Any]]]:
-    calib = tuning.get("calibration") or {}
-    if not isinstance(calib, dict):
-        raise ValueError("tuning.calibration precisa ser um objeto {pool: calibração}")
+def _attach_calibration(pool_list: list[Pool], decisions: dict) -> list[Pool]:
+    """Pool com entrada aplicada usa a calibração; o resto fica no eta (§4)."""
     out: list[Pool] = []
-    warnings: list[dict[str, Any]] = []
     for p in pool_list:
-        cal = calib.get(p.id)
-        if cal is None:
+        d = decisions.get(p.id)
+        if d is None or d.entry is None:
             out.append(p)
-            continue
-        bw, ovh = cal.get("bandwidth_bytes_per_s") if isinstance(cal, dict) else None, None
-        if isinstance(cal, dict):
-            ovh = cal.get("overhead_s_per_token", 0)
-        if (isinstance(bw, bool) or not isinstance(bw, int) or bw < 1
-                or isinstance(ovh, bool) or not isinstance(ovh, (int, float)) or ovh < 0):
-            raise ValueError(f"tuning.calibration.{p.id} inválida: banda inteira > 0 e overhead >= 0")
-        cmp = _power_compare(cal.get("power"), power)
-        if cmp == "mismatch":
-            warnings.append(_warning(
-                "calibration_power_mismatch", "warn",
-                f"A calibração do pool {p.id} foi medida em outro estado de energia "
-                f"(medição: {_power_text(cal.get('power'))}; agora: {_power_text(power)}); "
-                "tokens/s calibrado com confiança rebaixada.",
-                f"inputs.tuning.calibration.{p.id}.power"))
-        out.append(replace(p, cal=cal, cal_power=cmp))
-    return out, warnings
-
-
-def _power_text(pw: Any) -> str:
-    pw = pw if isinstance(pw, dict) else {}
-    ac = {True: "na tomada", False: "na bateria"}.get(pw.get("on_ac"), "energia desconhecida")
-    return f"{ac}, perfil {pw.get('profile') or 'desconhecido'}"
+        else:
+            out.append(replace(p, cal=d.entry, cal_reasons=d.reasons))
+    return out
 
 
 def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
-          power: dict | None = None) -> dict:
-    """Plano de viabilidade (feasibility.json). Sem arquivo, sem rede, sem relógio."""
+          power: dict | None = None, calibration: CalibrationInput | None = None,
+          engines: dict[str, str | None] | None = None) -> dict:
+    """Plano de viabilidade (feasibility.json). Sem arquivo, sem rede, sem relógio.
+
+    power: estado de energia ATUAL ($defs/power), lido pela CLI.
+    calibration: calibração local já lida (None = desligada).
+    engines: versão atual de cada ferramenta, lida pela CLI; o solver só compara.
+    """
+    if "calibration" in tuning:
+        raise ValueError("tuning com a chave 'calibration': a calibração agora fica no "
+                         "calibration.json local (calibration_store_spec.md §1); rode `scout bench --run` de novo.")
     if intent.kv_quant not in E.KV_ELEM_BITS:
         raise ValueError(f"kv_quant inválido: {intent.kv_quant!r}")
     if intent.ctx < 1 or intent.batch < 1:
@@ -882,9 +867,9 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
         raise ValueError("intent.tasks vazio ou sem tarefa conhecida")
 
     pool_list, warnings = _build_pools(system, tuning)
-    # power = estado de energia ATUAL {on_ac, profile}, lido pela CLI; só serve
-    # para comparar com o da calibração (bench_spec.md).
-    pool_list, cal_warnings = _attach_calibration(pool_list, tuning, power)
+    cal_echo, decisions, cal_warnings, power_echo = _evaluate_calibration(
+        calibration, system, power, engines, tuple(p.id for p in pool_list))
+    pool_list = _attach_calibration(pool_list, decisions)
     warnings += cal_warnings
     if intent.prompt_tokens is not None and intent.prompt_tokens < 1:
         raise ValueError("prompt_tokens precisa ser >= 1")
@@ -934,8 +919,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
                 "kv_quant": intent.kv_quant,
                 **({"prompt_tokens": intent.prompt_tokens} if intent.prompt_tokens is not None else {}),
             },
-            **({"power": {"on_ac": (power or {}).get("on_ac"), "profile": (power or {}).get("profile")}}
-               if tuning.get("calibration") else {}),
+            "calibration": cal_echo,
+            **({"power": power_echo} if cal_echo["status"] in ("used", "discarded") else {}),
             "system": system,
             "catalog": {
                 "sha256": _catalog_sha256(catalog),
@@ -950,7 +935,6 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
                    if tuning.get("max_bpw_offload") is not None else {}),
                 **({"prefill_reference": tuning["prefill_reference"]}
                    if isinstance(tuning.get("prefill_reference"), dict) else {}),
-                **({"calibration": tuning["calibration"]} if tuning.get("calibration") else {}),
             },
         },
         "pools": [p.to_json() for p in pool_list],

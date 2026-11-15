@@ -15,6 +15,7 @@ from typing import Any
 
 from scout import __version__
 from scout.estimate import fmt_gb, fmt_gbps
+from scout.calibration import CalibrationInput, describe_power
 from scout.solver import TASKS, Intent, solve
 
 TUNING_PATH = Path(__file__).resolve().parent.parent / "data" / "tuning.json"
@@ -146,12 +147,39 @@ def render_markdown(f: dict) -> str:
                      else f" Faltam {_est(fmt_gb(r['missing_bytes']), r.get('provenance', {}), 'missing_bytes')}.")
             lines.append(f"- {r['model']['id']} — `{r['reason_code']}`: {r['message']}{extra}")
 
+    lines += ["", *_calibration_lines(f["inputs"].get("calibration"), f["inputs"].get("power"))]
+
     ex = f["excluded"]
     lines += ["", f"Excluídos sem avaliação: {ex['incomplete']} incompletos, "
                   f"{ex['task_mismatch']} sem a tarefa pedida.", "", "## Avisos", ""]
     for w in f["warnings"]:
         lines.append(f"- [{w['severity']}] {w['message']}")
     return "\n".join(lines) + "\n"
+
+
+_CAL_STATUS = {"disabled": "desligada", "absent": "nenhum arquivo", "used": "usada",
+               "discarded": "descartada (tokens/s pelo eta)"}
+_CAL_POOL_STATUS = {"applied": "aplicada", "discarded": "descartada", "pool_absent": "pool ausente neste sistema"}
+_CAL_MATCH = {"same": "mesmo estado de energia", "other_state": "outro estado de energia (usada a medição mais lenta)",
+              "unknown": "estado de energia atual não provado (usada a medição mais lenta compatível)"}
+
+
+def _calibration_lines(cal: dict | None, power: dict | None) -> list[str]:
+    """Linha de calibração do markdown, com o estado de energia por extenso."""
+    if not cal:
+        return []
+    head = f"Calibração local: {_CAL_STATUS[cal['status']]} (origem: {cal['origin']})"
+    if power is not None:
+        head += f"; energia agora: {describe_power(power)}"
+    out = [head + "."]
+    for pid, pc in sorted(cal.get("pools", {}).items()):
+        e, eng = pc["calibration"], pc["engine"]
+        states = "; ".join(describe_power(x) for x in pc["available_power"])
+        out.append(f"- pool {pid}: {_CAL_POOL_STATUS[pc['status']]}; medida {describe_power(e['power'])} "
+                   f"em {e['date']} ({eng['tool']} {eng['stored_version'] or 'versão não lida'}), "
+                   f"{fmt_gbps(e['bandwidth_bytes_per_s'])} efetivos; {_CAL_MATCH[pc['power_match']]}; "
+                   f"estados gravados: {states}.")
+    return out
 
 
 def load_tuning(path: Path | None = None) -> dict:
@@ -163,18 +191,21 @@ def load_tuning(path: Path | None = None) -> dict:
 
 
 def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, intent: Intent,
-             power: dict | None = None) -> dict:
+             power: dict | None = None, calibration: CalibrationInput | None = None,
+             engines: dict[str, str | None] | None = None) -> dict:
     """solve + identificação do catálogo pelos bytes exatos do arquivo lido (schema).
 
-    Com calibração no tuning, lê o estado de energia ATUAL (mesma regra do
+    Com um calibration.json lido, lê o estado de energia ATUAL (mesma regra do
     bench) para o solver comparar com o da calibração. Sem calibração não lê
     nada, e a saída não depende do estado da máquina.
+    PENDENTE (coletor, calibration_store_spec.md §1/§3): resolver e ler o
+    arquivo local e as versões dos motores; até lá os chamadores passam None.
     """
-    if power is None and tuning.get("calibration"):
+    if power is None and calibration is not None and calibration.doc is not None:
         from scout.bench import read_power
 
         power = read_power()
-    result = solve(system, catalog, intent, tuning, power)
+    result = solve(system, catalog, intent, tuning, power, calibration, engines)
     result["inputs"]["catalog"]["sha256"] = hashlib.sha256(catalog_raw).hexdigest()
     return result
 
