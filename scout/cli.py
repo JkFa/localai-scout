@@ -197,7 +197,7 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
     except hf.HFError as e:
         raise InputError(f"Hugging Face: {e.reason} em {e.url}") from e
 
-    entry, reasons = build_entry_with_reasons(args.repo, info, config, gguf, policy, _utc_today())
+    entry, reasons, add_warnings = build_entry_with_reasons(args.repo, info, config, gguf, policy, _utc_today())
     text = json.dumps(upsert(catalog, entry), sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +208,8 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
     sys.stderr.write(f"scout: {entry['id']} gravado em {path}: {state}, {len(entry['quants'])} quants\n")
     for field in sorted(reasons):
         sys.stderr.write(f"  {field}: {reasons[field]}\n")
+    for w in add_warnings:
+        sys.stderr.write(f"  aviso: {w}\n")
     if entry["license"] is not None and entry["commercial_ok"] is None:
         sys.stderr.write(f"  aviso: licença {entry['license']!r} fora de {POLICY_PATH.name}; commercial_ok=null\n")
     return 0

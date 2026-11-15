@@ -344,3 +344,31 @@ def test_cli_catalog_check_fails_on_incoherent(tmp_path):
     p = tmp_path / "catalog.json"
     p.write_text(json.dumps(as_catalog(e)), encoding="utf-8")
     assert cli.main(["catalog", "check", "--catalog", str(p), "--today", TODAY]) != 0
+
+
+# ---------------------------------------------------------------- arquivo único + shards
+
+
+def test_single_file_and_shards_of_same_quant_give_one_quant():
+    warnings: list[str] = []
+    qs = C.gguf_quants(j("gguf_single_and_shards.json"), 7_200_000_000, warnings)
+    by = {q["name"]: q for q in qs}
+    assert sorted(by) == ["FP16", "Q4_K_M", "Q5_0", "Q8_0"]
+    base = "https://huggingface.co/test/dense-7b-gguf/resolve/main/"
+    # arquivo único vence: file_bytes e file_url dele
+    assert by["Q4_K_M"]["file_bytes"] == 4_410_000_000
+    assert by["Q4_K_M"]["file_url"] == base + "dense-7b-q4_k_m.gguf"
+    assert by["FP16"]["file_bytes"] == 15_000_000_000
+    # só shards: soma, URL do primeiro shard
+    assert by["Q5_0"]["file_bytes"] == 5_000_000_000
+    assert by["Q5_0"]["file_url"] == base + "dense-7b-q5_0-00001-of-00002.gguf"
+    # divergência > 1% (7.00e9 vs 7.65e9): fica o arquivo único, com aviso
+    assert by["Q8_0"]["file_bytes"] == 7_650_000_000
+    assert len(warnings) == 1 and "dense-7b-q8_0" in warnings[0]
+
+
+def test_single_and_shards_warning_reaches_build_entry():
+    _, _, warnings = C.build_entry_with_reasons(
+        "test/dense-2b", j("info_dense.json"), j("config_dense.json"),
+        j("gguf_single_and_shards.json"), POLICY, TODAY)
+    assert len(warnings) == 1

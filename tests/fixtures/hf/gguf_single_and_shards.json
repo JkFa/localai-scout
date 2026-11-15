@@ -1,0 +1,17 @@
+{
+  "id": "test/dense-7b-gguf",
+  "_fixture": "SINTÉTICO: mesma quant como arquivo único E como conjunto de shards; uma quant só em shards",
+  "siblings": [
+    {"rfilename": "dense-7b-fp16-00001-of-00002.gguf", "lfs": {"size": 8000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-fp16-00002-of-00002.gguf", "lfs": {"size": 7000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-fp16.gguf", "lfs": {"size": 15000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q4_k_m-00001-of-00002.gguf", "lfs": {"size": 4000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q4_k_m-00002-of-00002.gguf", "lfs": {"size": 400000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q4_k_m.gguf", "lfs": {"size": 4410000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q5_0-00001-of-00002.gguf", "lfs": {"size": 4000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q5_0-00002-of-00002.gguf", "lfs": {"size": 1000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q8_0-00001-of-00002.gguf", "lfs": {"size": 4000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q8_0-00002-of-00002.gguf", "lfs": {"size": 3000000000, "sha256": "00"}},
+    {"rfilename": "dense-7b-q8_0.gguf", "lfs": {"size": 7650000000, "sha256": "00"}}
+  ]
+}

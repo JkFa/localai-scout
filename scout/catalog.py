@@ -39,7 +39,7 @@ GATED_ACTS: tuple[str, ...] = ("silu", "swish", "swiglu")
 STALE_DAYS = 60
 BPW_MAX = 32
 
-_QUANT_RE = re.compile(r"(?i)(?<![A-Za-z0-9])((?:I?Q\d+(?:_[A-Z0-9]+)*)|BF16|F16|F32)(?![A-Za-z0-9])")
+_QUANT_RE = re.compile(r"(?i)(?<![A-Za-z0-9])((?:I?Q\d+(?:_[A-Z0-9]+)*)|BF16|FP16|F16|F32)(?![A-Za-z0-9])")
 _SHARD_RE = re.compile(r"-(\d{5})-of-(\d{5})$")
 
 
@@ -162,13 +162,22 @@ def _sibling_size(s: dict) -> int | None:
     return _int(s.get("size"))
 
 
-def gguf_quants(blob_info: dict, params_total: int | None) -> list[dict]:
+def gguf_quants(blob_info: dict, params_total: int | None,
+                warnings: list[str] | None = None) -> list[dict]:
     """Quants GGUF do repo (API com ?blobs=true). bpw = file_bytes*8/params_total.
 
-    Shards (-00001-of-0000N) são somados; conjunto incompleto é descartado.
-    mmproj (projetor de visão) e arquivos sem nome de quant são ignorados.
+    Por quant (mesmo nome de arquivo sem o sufixo de shard) pode haver um
+    arquivo único e/ou conjuntos de shards (-00001-of-0000N). Gera UMA quant:
+    o arquivo único quando existe; senão o único conjunto completo de shards,
+    somado. Conjunto incompleto é descartado. Se arquivo único e shards
+    divergem em mais de 1% no total, fica o arquivo único e entra um aviso em
+    `warnings`. mmproj (projetor de visão) e arquivos sem nome de quant são
+    ignorados.
     """
+    if warnings is None:
+        warnings = []
     repo = blob_info.get("id")
+    # key -> {"single": (path, size) | None, "sets": {n_total: {idx: (path, size)}}}
     groups: dict[str, dict[str, Any]] = {}
     for s in blob_info.get("siblings") or []:
         path = s.get("rfilename")
@@ -178,33 +187,45 @@ def gguf_quants(blob_info: dict, params_total: int | None) -> list[dict]:
             continue
         stem = path[: -len(".gguf")]
         m = _SHARD_RE.search(stem)
-        shard, n_shards = (int(m.group(1)), int(m.group(2))) if m else (1, 1)
         key = stem[: m.start()] if m else stem
-        g = groups.setdefault(key, {"n": n_shards, "parts": {}, "first": None})
-        if g["n"] != n_shards:
-            g["n"] = -1  # contagem de shards inconsistente
-        g["parts"][shard] = _sibling_size(s)
-        if shard == 1:
-            g["first"] = path
+        g = groups.setdefault(key, {"single": None, "sets": {}})
+        if m:
+            g["sets"].setdefault(int(m.group(2)), {})[int(m.group(1))] = (path, _sibling_size(s))
+        else:
+            g["single"] = (path, _sibling_size(s))
 
-    named: list[tuple[str, str, dict]] = []
+    named: list[tuple[str, str, str, int | None]] = []  # (nome, key, url_path, file_bytes)
     for key in sorted(groups):
         g = groups[key]
-        if g["n"] < 1 or sorted(g["parts"]) != list(range(1, g["n"] + 1)):
-            continue
         matches = _QUANT_RE.findall(key.rsplit("/", 1)[-1]) or _QUANT_RE.findall(key)
         if not matches:
             continue
-        named.append((matches[-1].upper(), key, g))
+        complete_sets = []
+        for n_total in sorted(g["sets"]):
+            parts = g["sets"][n_total]
+            if sorted(parts) == list(range(1, n_total + 1)):
+                sizes = [parts[i][1] for i in sorted(parts)]
+                total = sum(sizes) if all(x is not None for x in sizes) else None
+                complete_sets.append((parts[1][0], total))
+        if g["single"] is not None:
+            path, size = g["single"]
+            for _, total in complete_sets:
+                if size is not None and total is not None and abs(total - size) * 100 > size:
+                    warnings.append(f"{key}: arquivo único ({size} bytes) e shards ({total} bytes) "
+                                    "divergem mais de 1%; usado o arquivo único")
+            named.append((matches[-1].upper(), key, path, size))
+        elif len(complete_sets) == 1:
+            path, total = complete_sets[0]
+            named.append((matches[-1].upper(), key, path, total))
+        elif len(complete_sets) > 1:
+            warnings.append(f"{key}: mais de um conjunto de shards e nenhum arquivo único; quant ignorada")
 
     counts: dict[str, int] = {}
-    for name, _, _ in named:
+    for name, _, _, _ in named:
         counts[name] = counts.get(name, 0) + 1
 
     quants: list[dict] = []
-    for name, key, g in named:
-        sizes = list(g["parts"].values())
-        file_bytes = sum(sizes) if all(x is not None for x in sizes) else None
+    for name, key, path, file_bytes in named:
         bpw = None
         if file_bytes is not None and params_total is not None:
             bpw = round(file_bytes * 8 / params_total, 4)
@@ -216,7 +237,7 @@ def gguf_quants(blob_info: dict, params_total: int | None) -> list[dict]:
             "bpw": bpw,
             "bpw_source": "file_bytes" if bpw is not None else None,
             "file_bytes": file_bytes,
-            "file_url": f"{BASE}/{repo}/resolve/main/{g['first']}" if repo and g["first"] else None,
+            "file_url": f"{BASE}/{repo}/resolve/main/{path}" if repo else None,
         })
     return sorted(quants, key=lambda q: (q["name"]))
 
@@ -248,12 +269,14 @@ def tasks_from_info(info: dict) -> list[str] | None:
 def build_entry(repo: str, info: dict, config: dict | None, gguf_info: dict | None,
                 policy: dict, today: str) -> dict:
     """Entrada do catálogo, válida contra catalog.schema.json."""
-    entry, _ = build_entry_with_reasons(repo, info, config, gguf_info, policy, today)
+    entry, _, _ = build_entry_with_reasons(repo, info, config, gguf_info, policy, today)
     return entry
 
 
 def build_entry_with_reasons(repo: str, info: dict, config: dict | None, gguf_info: dict | None,
-                             policy: dict, today: str) -> tuple[dict, dict[str, str]]:
+                             policy: dict, today: str) -> tuple[dict, dict[str, str], list[str]]:
+    """Como build_entry, mais motivos dos campos null e avisos (ex.: shards divergentes)."""
+    warnings: list[str] = []
     arch = map_config(config)
     reasons = dict(arch["null_reasons"])
 
@@ -283,7 +306,7 @@ def build_entry_with_reasons(repo: str, info: dict, config: dict | None, gguf_in
     if tasks is None:
         reasons["tasks"] = f"pipeline_tag {info.get('pipeline_tag')!r} fora da tabela"
 
-    quants = gguf_quants(gguf_info, params_total) if gguf_info else []
+    quants = gguf_quants(gguf_info, params_total, warnings) if gguf_info else []
     if not quants:
         reasons["quants"] = "nenhuma quant GGUF encontrada" if gguf_info else "sem --gguf-repo"
 
@@ -304,7 +327,7 @@ def build_entry_with_reasons(repo: str, info: dict, config: dict | None, gguf_in
         incomplete.append("quants")
     entry["complete"] = not incomplete
     entry["incomplete_fields"] = incomplete
-    return entry, {f: reasons.get(f, "ausente") for f in incomplete}
+    return entry, {f: reasons.get(f, "ausente") for f in incomplete}, warnings
 
 
 def upsert(catalog: dict, entry: dict) -> dict:
