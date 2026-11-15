@@ -136,7 +136,7 @@ def markdown_numbers_missing_from_json(md: str, doc: dict) -> list[str]:
     strings: set[str] = set()
     _strings(doc, strings)
     # ids, nomes de quant, urls, etc. contêm dígitos que não são números exibidos
-    for s in sorted((x for x in strings if len(x) >= 3), key=len, reverse=True):
+    for s in sorted((x for x in strings if len(x) >= 3 and not re.fullmatch(r"[\d.,]+", x)), key=len, reverse=True):
         md = md.replace(s, " ")
     md = re.sub(r"(?m)^\s*\d+[.)]\s", " ", md)          # numeração de listas
     nums: list = []

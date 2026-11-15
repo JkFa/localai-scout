@@ -1,4 +1,4 @@
-"""Infra compartilhada da suíte. Nenhum teste lê data/catalog.json: só as fixtures daqui."""
+"""Infra compartilhada da suíte. Nenhum teste lê o diretório de dados reais: só as fixtures daqui."""
 from __future__ import annotations
 
 import copy
@@ -23,7 +23,7 @@ SYSTEM_PATHS = {
     "apple24": FIX / "sys_apple24.json",
     "rx7800xt": FIX / "sys_rx7800xt.json",
 }
-TUNING_PATH = FIX / "tuning_test.json"  # nenhum teste lê data/tuning.json (F8)
+TUNING_PATH = FIX / "tuning_test.json"  # F8: tuning de teste, nunca o real
 ALL_TASKS = ("chat", "code", "embeddings")
 
 

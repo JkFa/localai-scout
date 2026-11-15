@@ -2,6 +2,8 @@
 rejeitados. Contas à mão nos comentários. (F6 e F8 estão em test_cli.py.)"""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from conftest import ALL_TASKS, TUNING, assert_valid, deep
@@ -178,3 +180,76 @@ def test_f7_missing_bytes_calculated_when_closest_has_file_bytes(systems, catalo
         assert r["missing_bytes"] > 0
         assert r.get("provenance", {}).get("missing_bytes", "calculated") == "calculated"
     assert_valid("feasibility.schema.json", out)
+
+
+# ================================================================ R3: nota offload_skipped_above_bpw
+CODE = "offload_skipped_above_bpw"
+
+
+def notes(c):
+    return c.get("notes") or []
+
+
+def test_r3_note_when_offload_limit_discards_hybrid_but_model_still_enters(systems, catalog):
+    out = go(systems["rtx3060"], catalog, [fat_model(catalog)])
+    c = cand(out, "test/fat-7b")
+    # F16 só seria híbrida (limiar 8.5); Q8_0 cabe inteiro na GPU
+    assert c["quant"]["name"] == "Q8_0" and c["placement"] == "gpu_full"
+    ns = [n for n in notes(c) if n["code"] == CODE]
+    assert len(ns) == 1 and ns[0]["message"].strip()
+    msg = ns[0]["message"]
+    assert "F16" in msg and "Q8_0" in msg and ("8,5" in msg or "8.5" in msg)
+    assert rej(out, "test/fat-7b") is None and out["rejected"] == []      # sem entrada em rejected
+    assert c["skipped_quants"] == [{"format": "GGUF", "name": "F16", "reason_code": "bpw_above_offload_limit"}]
+    assert_valid("feasibility.schema.json", out)
+
+
+def test_r3_note_numbers_come_from_tuning(systems, catalog):
+    out = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning={**TUNING, "max_bpw_offload": 12.0})
+    msg = next(n["message"] for n in notes(cand(out, "test/fat-7b")) if n["code"] == CODE)
+    assert "12" in msg and "8,5" not in msg and "8.5" not in msg
+
+
+def test_r3_no_note_without_limit_in_tuning(systems, catalog):
+    tun = {k: v for k, v in TUNING.items() if k != "max_bpw_offload"}
+    out = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning=tun)
+    c = cand(out, "test/fat-7b")
+    assert c["quant"]["name"] == "F16" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 21
+    assert notes(c) == []
+
+
+def test_r3_no_note_when_limit_does_not_act(systems, catalog):
+    # catálogo de teste puro: nenhuma quant acima do limiar depende de híbrido
+    for profile in ("cpu8", "rtx3060", "ddr5_64", "apple24", "rx7800xt"):
+        out = run(systems[profile], catalog)
+        assert all(notes(c) == [] for c in out["candidates"]), profile
+    # limiar acima de todas as quants do 7B/F16 também não gera nota
+    out = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning={**TUNING, "max_bpw_offload": 16.0})
+    assert notes(cand(out, "test/fat-7b")) == []
+
+
+def test_r3_notes_are_deterministic(systems, catalog):
+    a = go(systems["rtx3060"], catalog, [fat_model(catalog)])
+    b = go(systems["rtx3060"], catalog, [fat_model(catalog)])
+    assert notes(cand(a, "test/fat-7b")) == notes(cand(b, "test/fat-7b"))
+
+
+def test_r3_markdown_shows_the_note(tmp_path, capsys):
+    import json
+
+    from conftest import CATALOG_PATH, SYSTEM_PATHS, TUNING_PATH, load
+    from scout.cli import main
+    from test_cli import markdown_numbers_missing_from_json
+
+    cat = load(CATALOG_PATH)
+    cat["models"] = [fat_model(cat)]
+    p = tmp_path / "cat.json"
+    p.write_text(json.dumps(cat))
+    argv = ["plan", "--system", str(SYSTEM_PATHS["rtx3060"]), "--catalog", str(p), "--tuning", str(TUNING_PATH)]
+    assert main([*argv, "--json"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    msg = next(n["message"] for n in notes(doc["candidates"][0]) if n["code"] == CODE)
+    assert main(argv) == 0
+    md = capsys.readouterr().out
+    assert msg in md
+    assert markdown_numbers_missing_from_json(md, doc) == []
