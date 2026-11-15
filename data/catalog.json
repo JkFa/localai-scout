@@ -1,0 +1,485 @@
+{
+  "kind": "catalog",
+  "models": [
+    {
+      "commercial_ok": true,
+      "complete": false,
+      "ctx_max": 16384,
+      "gguf_repo": null,
+      "head_dim": 64,
+      "id": "HuggingFaceTB/SmolVLM-Instruct",
+      "incomplete_fields": [
+        "quants"
+      ],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/HuggingFaceTB/SmolVLM-Instruct",
+      "n_heads": 32,
+      "n_kv_heads": 32,
+      "n_layers": 24,
+      "params_active": 2246272880,
+      "params_total": 2246272880,
+      "quants": [],
+      "source_url": "https://huggingface.co/HuggingFaceTB/SmolVLM-Instruct",
+      "tasks": [
+        "vlm"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
+      "commercial_ok": true,
+      "complete": true,
+      "ctx_max": 32768,
+      "gguf_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "head_dim": 128,
+      "id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "incomplete_fields": [],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+      "n_heads": 28,
+      "n_kv_heads": 4,
+      "n_layers": 28,
+      "params_active": 7615616512,
+      "params_total": 7615616512,
+      "quants": [
+        {
+          "bpw": 16.007,
+          "bpw_source": "file_bytes",
+          "file_bytes": 15237853184,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-fp16.gguf",
+          "format": "GGUF",
+          "name": "FP16"
+        },
+        {
+          "bpw": 3.1682,
+          "bpw_source": "file_bytes",
+          "file_bytes": 3015940032,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q2_k.gguf",
+          "format": "GGUF",
+          "name": "Q2_K"
+        },
+        {
+          "bpw": 4.0006,
+          "bpw_source": "file_bytes",
+          "file_bytes": 3808391104,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q3_k_m.gguf",
+          "format": "GGUF",
+          "name": "Q3_K_M"
+        },
+        {
+          "bpw": 4.6551,
+          "bpw_source": "file_bytes",
+          "file_bytes": 4431390720,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_0.gguf",
+          "format": "GGUF",
+          "name": "Q4_0"
+        },
+        {
+          "bpw": 4.9194,
+          "bpw_source": "file_bytes",
+          "file_bytes": 4683073536,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+          "format": "GGUF",
+          "name": "Q4_K_M"
+        },
+        {
+          "bpw": 5.5834,
+          "bpw_source": "file_bytes",
+          "file_bytes": 5315176576,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q5_0-00001-of-00002.gguf",
+          "format": "GGUF",
+          "name": "Q5_0"
+        },
+        {
+          "bpw": 5.7196,
+          "bpw_source": "file_bytes",
+          "file_bytes": 5444831232,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q5_k_m.gguf",
+          "format": "GGUF",
+          "name": "Q5_K_M"
+        },
+        {
+          "bpw": 6.5699,
+          "bpw_source": "file_bytes",
+          "file_bytes": 6254198784,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q6_k.gguf",
+          "format": "GGUF",
+          "name": "Q6_K"
+        },
+        {
+          "bpw": 8.5073,
+          "bpw_source": "file_bytes",
+          "file_bytes": 8098525184,
+          "file_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q8_0.gguf",
+          "format": "GGUF",
+          "name": "Q8_0"
+        }
+      ],
+      "source_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+      "tasks": [
+        "chat",
+        "code"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
+      "commercial_ok": true,
+      "complete": true,
+      "ctx_max": 40960,
+      "gguf_repo": "Qwen/Qwen3-30B-A3B-GGUF",
+      "head_dim": 128,
+      "id": "Qwen/Qwen3-30B-A3B",
+      "incomplete_fields": [],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+      "n_heads": 32,
+      "n_kv_heads": 4,
+      "n_layers": 48,
+      "params_active": 3353032704,
+      "params_total": 30532122624,
+      "quants": [
+        {
+          "bpw": 4.8622,
+          "bpw_source": "file_bytes",
+          "file_bytes": 18556685824,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q4_K_M"
+        },
+        {
+          "bpw": 5.5235,
+          "bpw_source": "file_bytes",
+          "file_bytes": 21080509952,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q5_0.gguf",
+          "format": "GGUF",
+          "name": "Q5_0"
+        },
+        {
+          "bpw": 5.6925,
+          "bpw_source": "file_bytes",
+          "file_bytes": 21725580800,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q5_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q5_K_M"
+        },
+        {
+          "bpw": 6.5747,
+          "bpw_source": "file_bytes",
+          "file_bytes": 25092531712,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q6_K.gguf",
+          "format": "GGUF",
+          "name": "Q6_K"
+        },
+        {
+          "bpw": 8.5114,
+          "bpw_source": "file_bytes",
+          "file_bytes": 32483931648,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q8_0.gguf",
+          "format": "GGUF",
+          "name": "Q8_0"
+        }
+      ],
+      "source_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+      "tasks": [
+        "chat"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
+      "commercial_ok": true,
+      "complete": true,
+      "ctx_max": 40960,
+      "gguf_repo": "Qwen/Qwen3-4B-GGUF",
+      "head_dim": 128,
+      "id": "Qwen/Qwen3-4B",
+      "incomplete_fields": [],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/Qwen/Qwen3-4B",
+      "n_heads": 32,
+      "n_kv_heads": 8,
+      "n_layers": 36,
+      "params_active": 4022468096,
+      "params_total": 4022468096,
+      "quants": [
+        {
+          "bpw": 4.9667,
+          "bpw_source": "file_bytes",
+          "file_bytes": 2497280256,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q4_K_M"
+        },
+        {
+          "bpw": 5.6159,
+          "bpw_source": "file_bytes",
+          "file_bytes": 2823710976,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q5_0.gguf",
+          "format": "GGUF",
+          "name": "Q5_0"
+        },
+        {
+          "bpw": 5.7467,
+          "bpw_source": "file_bytes",
+          "file_bytes": 2889513184,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q5_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q5_K_M"
+        },
+        {
+          "bpw": 6.5756,
+          "bpw_source": "file_bytes",
+          "file_bytes": 3306260704,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q6_K.gguf",
+          "format": "GGUF",
+          "name": "Q6_K"
+        },
+        {
+          "bpw": 8.513,
+          "bpw_source": "file_bytes",
+          "file_bytes": 4280404704,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf",
+          "format": "GGUF",
+          "name": "Q8_0"
+        }
+      ],
+      "source_url": "https://huggingface.co/Qwen/Qwen3-4B",
+      "tasks": [
+        "chat"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
+      "commercial_ok": true,
+      "complete": true,
+      "ctx_max": 40960,
+      "gguf_repo": "Qwen/Qwen3-8B-GGUF",
+      "head_dim": 128,
+      "id": "Qwen/Qwen3-8B",
+      "incomplete_fields": [],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/Qwen/Qwen3-8B",
+      "n_heads": 32,
+      "n_kv_heads": 8,
+      "n_layers": 36,
+      "params_active": 8190735360,
+      "params_total": 8190735360,
+      "quants": [
+        {
+          "bpw": 4.9107,
+          "bpw_source": "file_bytes",
+          "file_bytes": 5027783488,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q4_K_M"
+        },
+        {
+          "bpw": 5.5875,
+          "bpw_source": "file_bytes",
+          "file_bytes": 5720761152,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q5_0.gguf",
+          "format": "GGUF",
+          "name": "Q5_0"
+        },
+        {
+          "bpw": 5.7149,
+          "bpw_source": "file_bytes",
+          "file_bytes": 5851112224,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q5_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q5_K_M"
+        },
+        {
+          "bpw": 6.5693,
+          "bpw_source": "file_bytes",
+          "file_bytes": 6725899040,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q6_K.gguf",
+          "format": "GGUF",
+          "name": "Q6_K"
+        },
+        {
+          "bpw": 8.5067,
+          "bpw_source": "file_bytes",
+          "file_bytes": 8709518112,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
+          "format": "GGUF",
+          "name": "Q8_0"
+        }
+      ],
+      "source_url": "https://huggingface.co/Qwen/Qwen3-8B",
+      "tasks": [
+        "chat"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
+      "commercial_ok": true,
+      "complete": true,
+      "ctx_max": 2048,
+      "gguf_repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
+      "head_dim": 64,
+      "id": "nomic-ai/nomic-embed-text-v1.5",
+      "incomplete_fields": [],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+      "n_heads": 12,
+      "n_kv_heads": 12,
+      "n_layers": 12,
+      "params_active": 136731648,
+      "params_total": 136731648,
+      "quants": [
+        {
+          "bpw": 16.0484,
+          "bpw_source": "file_bytes",
+          "file_bytes": 274290560,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.f16.gguf",
+          "format": "GGUF",
+          "name": "F16"
+        },
+        {
+          "bpw": 32.0432,
+          "bpw_source": "file_bytes",
+          "file_bytes": 547664768,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.f32.gguf",
+          "format": "GGUF",
+          "name": "F32"
+        },
+        {
+          "bpw": 2.8881,
+          "bpw_source": "file_bytes",
+          "file_bytes": 49361088,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q2_K.gguf",
+          "format": "GGUF",
+          "name": "Q2_K"
+        },
+        {
+          "bpw": 4.1888,
+          "bpw_source": "file_bytes",
+          "file_bytes": 71593088,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q3_K_L.gguf",
+          "format": "GGUF",
+          "name": "Q3_K_L"
+        },
+        {
+          "bpw": 3.93,
+          "bpw_source": "file_bytes",
+          "file_bytes": 67169408,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q3_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q3_K_M"
+        },
+        {
+          "bpw": 3.49,
+          "bpw_source": "file_bytes",
+          "file_bytes": 59649152,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q3_K_S.gguf",
+          "format": "GGUF",
+          "name": "Q3_K_S"
+        },
+        {
+          "bpw": 4.5522,
+          "bpw_source": "file_bytes",
+          "file_bytes": 77802880,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_0.gguf",
+          "format": "GGUF",
+          "name": "Q4_0"
+        },
+        {
+          "bpw": 4.921,
+          "bpw_source": "file_bytes",
+          "file_bytes": 84106624,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q4_K_M"
+        },
+        {
+          "bpw": 4.5694,
+          "bpw_source": "file_bytes",
+          "file_bytes": 78097792,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_S.gguf",
+          "format": "GGUF",
+          "name": "Q4_K_S"
+        },
+        {
+          "bpw": 5.5518,
+          "bpw_source": "file_bytes",
+          "file_bytes": 94888768,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q5_0.gguf",
+          "format": "GGUF",
+          "name": "Q5_0"
+        },
+        {
+          "bpw": 5.8268,
+          "bpw_source": "file_bytes",
+          "file_bytes": 99588928,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q5_K_M.gguf",
+          "format": "GGUF",
+          "name": "Q5_K_M"
+        },
+        {
+          "bpw": 5.5518,
+          "bpw_source": "file_bytes",
+          "file_bytes": 94888768,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q5_K_S.gguf",
+          "format": "GGUF",
+          "name": "Q5_K_S"
+        },
+        {
+          "bpw": 6.614,
+          "bpw_source": "file_bytes",
+          "file_bytes": 113042528,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q6_K.gguf",
+          "format": "GGUF",
+          "name": "Q6_K"
+        },
+        {
+          "bpw": 8.5508,
+          "bpw_source": "file_bytes",
+          "file_bytes": 146146432,
+          "file_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf",
+          "format": "GGUF",
+          "name": "Q8_0"
+        }
+      ],
+      "source_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+      "tasks": [
+        "embeddings"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
+      "commercial_ok": true,
+      "complete": false,
+      "ctx_max": null,
+      "gguf_repo": null,
+      "head_dim": null,
+      "id": "openai/whisper-large-v3-turbo",
+      "incomplete_fields": [
+        "n_heads",
+        "n_kv_heads",
+        "head_dim",
+        "ctx_max",
+        "quants"
+      ],
+      "kv_model": "standard",
+      "license": "mit",
+      "license_source": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "n_heads": null,
+      "n_kv_heads": null,
+      "n_layers": 32,
+      "params_active": 808878080,
+      "params_total": 808878080,
+      "quants": [],
+      "source_url": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "tasks": [
+        "stt"
+      ],
+      "verified_at": "2026-11-15"
+    }
+  ],
+  "schema_version": 1
+}
