@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from conftest import ALL_TASKS, CATALOG_PATH, SYSTEM_PATHS, assert_valid, load
+from conftest import ALL_TASKS, CATALOG_PATH, SYSTEM_PATHS, TUNING_PATH, assert_valid, load
 from scout.cli import main
 from scout.estimate import fmt_gb
 
@@ -15,7 +15,8 @@ PROFILES = sorted(SYSTEM_PATHS)
 
 
 def plan(capsys, profile, *extra, as_json=False):
-    argv = ["plan", "--system", str(SYSTEM_PATHS[profile]), "--catalog", str(CATALOG_PATH), *extra]
+    argv = ["plan", "--system", str(SYSTEM_PATHS[profile]), "--catalog", str(CATALOG_PATH),
+            "--tuning", str(TUNING_PATH), *extra]
     if as_json:
         argv.append("--json")
     try:
@@ -66,7 +67,7 @@ def test_plan_json_identifies_catalog_and_tuning(capsys):
     cat = doc["inputs"]["catalog"]
     assert cat["sha256"] == hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest()
     assert cat["model_count"] == 4 and cat["oldest_verified_at"] == "2026-11-15"
-    # data/tuning.json é lido pela CLI (não pelo solver): eta_gpu 0.75, eta_cpu 0.60
+    # --tuning (fixture tuning_test.json) é lido pela CLI, não pelo solver: eta_gpu 0.75, eta_cpu 0.60
     assert doc["inputs"]["tuning"]["eta_gpu"] == 0.75 and doc["inputs"]["tuning"]["eta_cpu"] == 0.6
 
 
@@ -210,7 +211,7 @@ def test_cli_never_lists_incomplete_models(tmp_path, capsys):
             m["complete"], m["ctx_max"], m["incomplete_fields"] = False, None, ["ctx_max"]
     p = tmp_path / "cat.json"
     p.write_text(json.dumps(cat))
-    argv = ["plan", "--system", str(SYSTEM_PATHS["rtx3060"]), "--catalog", str(p)]
+    argv = ["plan", "--system", str(SYSTEM_PATHS["rtx3060"]), "--catalog", str(p), "--tuning", str(TUNING_PATH)]
     rc = main(argv)
     md = capsys.readouterr().out
     assert rc == 0 and "test/embed-110m" not in md
@@ -226,7 +227,8 @@ def test_cli_stdout_only_has_the_report(capsys):
 
 
 def test_cli_missing_system_file_fails_cleanly(tmp_path, capsys):
-    argv = ["plan", "--system", str(tmp_path / "nao_existe.json"), "--catalog", str(CATALOG_PATH)]
+    argv = ["plan", "--system", str(tmp_path / "nao_existe.json"), "--catalog", str(CATALOG_PATH),
+            "--tuning", str(TUNING_PATH)]
     try:
         rc = main(argv)
     except SystemExit as e:
@@ -262,3 +264,55 @@ def test_cli_json_never_has_catalog_stale(capsys):
     for profile in PROFILES:
         doc, _ = plan_json(capsys, profile)
         assert "catalog_stale" not in {w["code"] for w in doc["warnings"]}
+
+
+# ---------------------------------------------------------------- F8: --tuning
+def test_cli_reads_tuning_file_given_by_flag(tmp_path, capsys):
+    base, _ = plan_json(capsys, "ddr5_64")
+    p = tmp_path / "tuning.json"
+    p.write_text(json.dumps({**load(TUNING_PATH), "eta_cpu": 0.30}))
+    doc, _ = plan_json(capsys, "ddr5_64", "--tuning", str(p))    # último --tuning vence
+    assert doc["inputs"]["tuning"]["eta_cpu"] == 0.3
+    a = next(c for c in base["candidates"] if c["model"]["id"] == "test/dense-7b")["tokens_per_s_est"]
+    b = next(c for c in doc["candidates"] if c["model"]["id"] == "test/dense-7b")["tokens_per_s_est"]
+    assert b == pytest.approx(a * 0.5, abs=0.011)                 # eta_cpu 0.30 vs 0.60 => metade
+
+
+def test_cli_passes_max_bpw_offload_to_solver(tmp_path, capsys):
+    """Fa ponta a ponta: com limiar 4.0 o MoE Q4_K_M (bpw 4.88) deixa de ser offload no perfil 2."""
+    p = tmp_path / "tuning.json"
+    p.write_text(json.dumps({**load(TUNING_PATH), "max_bpw_offload": 4.0}))
+    doc, _ = plan_json(capsys, "rtx3060", "--tuning", str(p))
+    moe = next(c for c in doc["candidates"] if c["model"]["id"] == "test/moe-30b-a3b")
+    assert moe["quant"]["name"] == "Q3_K_M" and moe["placement"] == "hybrid"
+    assert {"format": "GGUF", "name": "Q4_K_M", "reason_code": "bpw_above_offload_limit"} in moe["skipped_quants"]
+    base, _ = plan_json(capsys, "rtx3060")                        # 8.5: Q4_K_M híbrido como antes
+    assert next(c for c in base["candidates"] if c["model"]["id"] == "test/moe-30b-a3b")["quant"]["name"] == "Q4_K_M"
+
+
+# ---------------------------------------------------------------- F6: marcas no markdown
+def _row(md: str, model_id: str) -> str:
+    rows = [l for l in md.splitlines() if l.startswith("|") and model_id in l]
+    assert len(rows) == 1, rows
+    return rows[0]
+
+
+def test_markdown_marks_estimated_numbers_and_low_confidence(capsys):
+    _, md, _ = plan(capsys, "cpu8")
+    head = "\n".join(md.splitlines()[:12])
+    assert "~" in head and "\u26a0" in head, "legenda curta no topo"
+    tiny = _row(md, "test/tiny-1b")                    # pesos por fallback => confiança low
+    assert tiny.count("\u26a0") >= 2                    # ao lado da memória e dos tokens/s
+    assert re.search(r"~\s?\d", tiny)
+    _, md2, _ = plan(capsys, "rtx3060")
+    seven = _row(md2, "test/dense-7b")                 # file_bytes, confiança medium
+    assert "\u26a0" not in seven
+    assert re.search(r"~\s?\d", seven)                 # tokens/s é sempre estimado
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_markdown_marks_do_not_break_number_check(profile, capsys):
+    _, md, _ = plan(capsys, profile)
+    assert "~" in md
+    doc, _ = plan_json(capsys, profile)
+    assert markdown_numbers_missing_from_json(md, doc) == []

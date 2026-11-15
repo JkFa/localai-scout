@@ -1,0 +1,6 @@
+{
+  "eta_gpu": 0.75,
+  "eta_cpu": 0.60,
+  "max_bpw_offload": 8.5,
+  "source": "default"
+}

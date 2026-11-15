@@ -23,12 +23,15 @@ SYSTEM_PATHS = {
     "apple24": FIX / "sys_apple24.json",
     "rx7800xt": FIX / "sys_rx7800xt.json",
 }
-TUNING = {"eta_gpu": 0.75, "eta_cpu": 0.60}
+TUNING_PATH = FIX / "tuning_test.json"  # nenhum teste lê data/tuning.json (F8)
 ALL_TASKS = ("chat", "code", "embeddings")
 
 
 def load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+TUNING = load(TUNING_PATH)  # eta_gpu 0.75, eta_cpu 0.60, max_bpw_offload 8.5
 
 
 @pytest.fixture

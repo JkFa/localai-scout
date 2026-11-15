@@ -76,8 +76,19 @@ def expected_weights(m, q):
     return math.ceil(m["params_total"] * q["bpw"] / 8 * k_ovh_of(m["params_total"])), 1  # ±1
 
 
+def bytes_keys(c):
+    """Critério de ordem da F4 com tokens/s null, recalculado só do candidato:
+    (bytes_cpu_por_token, bytes_por_token). bytes_por_token = weights*active//total;
+    por camada = // n_layers; no CPU = camadas fora da GPU."""
+    m = c["model"]
+    bpt = c["weights_bytes"] * m["params_active"] // m["params_total"]
+    per_layer = bpt // m["n_layers"]
+    return per_layer * (m["n_layers"] - c["n_gpu_layers"]), bpt
+
+
 def sorted_ok(cands):
-    """Ordem do solver: tier, depois tokens/s desc (None por último), depois model_id."""
+    """Ordem do solver (F4): tier, tokens/s desc (None por último), depois
+    bytes_cpu_por_token asc, bytes_por_token asc, model_id asc (só entre tokens/s None)."""
     for a, b in zip(cands, cands[1:]):
         ra, rb = TIER_RANK[a["tier"]], TIER_RANK[b["tier"]]
         assert ra <= rb, "tier fora de ordem"
@@ -86,11 +97,9 @@ def sorted_ok(cands):
         ta, tb = a["tokens_per_s_est"], b["tokens_per_s_est"]
         if ta is None:
             assert tb is None, "None deve vir por último"
-            assert a["model"]["id"] <= b["model"]["id"]
+            assert (*bytes_keys(a), a["model"]["id"]) <= (*bytes_keys(b), b["model"]["id"])
         elif tb is not None:
             assert tb <= ta + 0.0051, "tokens/s deve ser decrescente"
-            if ta == tb:
-                assert a["model"]["id"] <= b["model"]["id"]
 
 
 def check_candidates(out, system, catalog, intent_kw):
@@ -582,7 +591,7 @@ def test_missing_ram_total_fails_loudly(systems, catalog):
         run(s, catalog)
 
 
-def test_unknown_bandwidth_gives_none_tokens_sorted_last(systems, catalog):
+def test_unknown_bandwidth_gives_none_tokens_ordered_by_bytes(systems, catalog):
     s = deep(systems["ddr5_64"])
     s["memory"]["bandwidth_bytes_per_s"] = {"value": None, "source": "none", "confidence": "low"}
     out = run(s, catalog)
@@ -590,8 +599,14 @@ def test_unknown_bandwidth_gives_none_tokens_sorted_last(systems, catalog):
     assert all(c["tokens_per_s_est"] is None for c in out["candidates"])
     assert all(c["ttft_s_est"] is None for c in out["candidates"])
     sorted_ok(out["candidates"])
-    ordered = [(TIER_RANK[c["tier"]], c["model"]["id"]) for c in out["candidates"]]
-    assert ordered == sorted(ordered)            # só sobra tier, depois model_id asc
+    # F4: sem tokens/s a ordem é por bytes lidos na CPU por token (cpu_only: bytes_camada_lidos * n_layers)
+    #   embed F16  220_000_000 // 12 * 12 = 219_999_996
+    #   1B  Q8_0   1_466_250_000 // 16 * 16 = 1_466_250_000
+    #   MoE Q6_K   24.6e9*3e9//30e9 = 2_460_000_000
+    #   7B  Q8_0   7_650_000_000
+    assert [c["model"]["id"] for c in out["candidates"]] == [
+        "test/embed-110m", "test/tiny-1b", "test/moe-30b-a3b", "test/dense-7b"]
+    assert all("ranked_by_bytes" in c["confidence_reasons"] for c in out["candidates"])
     assert_valid("feasibility.schema.json", out)
 
 
