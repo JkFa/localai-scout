@@ -252,7 +252,7 @@ export function renderRejected(doc) {
       return h("tr", {},
         h("th", { scope: "row" }, srcLink(r.model.source_url, String(r.model.id))),
         h("td", {}, h("strong", {}, REJECT[r.reason_code] || r.reason_code), h("div", {}, String(r.message))),
-        h("td", {}, r.missing_bytes == null ? h("em", { class: "unknown" }, "não se aplica") : num(fmtGiB(r.missing_bytes), "calculated")),
+        h("td", {}, r.missing_bytes == null ? h("em", { class: "unknown" }, "não se aplica") : num(fmtGiB(r.missing_bytes), (r.provenance && r.provenance.missing_bytes) || "calculated")),
         h("td", {}, cl && cl.quant ? `${cl.quant.name} (${PLACEMENT[cl.placement] || cl.placement}), precisaria de ${fmtGiB(cl.total_bytes)}` : "rejeitado antes do cálculo de memória"));
     });
     kids.push(h("div", { class: "scroll" }, table("Modelos que não couberam", ["Modelo", "Motivo", "Quanto faltou", "Tentativa mais próxima"], rows)));

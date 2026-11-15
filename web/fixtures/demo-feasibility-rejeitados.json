@@ -367,6 +367,7 @@
     "tuning": {
       "eta_cpu": 0.6,
       "eta_gpu": 0.75,
+      "max_bpw_offload": 8.5,
       "source": "default"
     }
   },

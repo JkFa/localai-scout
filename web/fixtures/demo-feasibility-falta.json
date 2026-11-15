@@ -1,0 +1,543 @@
+{
+  "candidates": [
+    {
+      "blocked": false,
+      "blocked_reason": null,
+      "buffer_bytes": 563840000,
+      "by_pool": [
+        {
+          "budget_bytes": 5589934592,
+          "buffer_bytes": 563840000,
+          "kv_bytes": 301989888,
+          "pool": "cpu",
+          "tier": "confortavel",
+          "total_bytes": 1085829888,
+          "weights_bytes": 220000000
+        }
+      ],
+      "confidence": "medium",
+      "confidence_reasons": [
+        "eta_default",
+        "ttft_unspecified"
+      ],
+      "ctx_effective": 8192,
+      "kv_bytes": 301989888,
+      "model": {
+        "commercial_ok": true,
+        "id": "test/embed-110m",
+        "license": "mit",
+        "license_source": "https://example.invalid/test/embed-110m",
+        "n_layers": 12,
+        "params_active": 110000000,
+        "params_total": 110000000,
+        "source_url": "https://example.invalid/test/embed-110m",
+        "tasks": [
+          "embeddings"
+        ]
+      },
+      "n_gpu_layers": 0,
+      "n_threads": 4,
+      "placement": "cpu_only",
+      "primary_for": [
+        "embeddings"
+      ],
+      "provenance": {
+        "buffer_bytes": "calculated",
+        "kv_bytes": "calculated",
+        "n_gpu_layers": "calculated",
+        "tokens_per_s_est": "estimated",
+        "total_bytes": "calculated",
+        "weights_bytes": "catalog"
+      },
+      "quant": {
+        "bpw": 16.0,
+        "file_bytes": 220000000,
+        "format": "GGUF",
+        "name": "F16"
+      },
+      "skipped_quants": [],
+      "tier": "confortavel",
+      "tokens_per_s_est": 58.17,
+      "total_bytes": 1085829888,
+      "ttft_s_est": null,
+      "weights_bytes": 220000000
+    },
+    {
+      "blocked": false,
+      "blocked_reason": null,
+      "buffer_bytes": 563840000,
+      "by_pool": [
+        {
+          "budget_bytes": 5589934592,
+          "buffer_bytes": 563840000,
+          "kv_bytes": 268435456,
+          "pool": "cpu",
+          "tier": "confortavel",
+          "total_bytes": 2298525456,
+          "weights_bytes": 1466250000
+        }
+      ],
+      "confidence": "low",
+      "confidence_reasons": [
+        "bpw_from_table",
+        "eta_default",
+        "ttft_unspecified",
+        "weights_fallback"
+      ],
+      "kv_bytes": 268435456,
+      "model": {
+        "commercial_ok": false,
+        "id": "test/tiny-1b",
+        "license": "test-noncommercial",
+        "license_source": "https://example.invalid/test/tiny-1b",
+        "n_layers": 16,
+        "params_active": 1200000000,
+        "params_total": 1200000000,
+        "source_url": "https://example.invalid/test/tiny-1b",
+        "tasks": [
+          "chat"
+        ]
+      },
+      "n_gpu_layers": 0,
+      "n_threads": 4,
+      "placement": "cpu_only",
+      "primary_for": [
+        "chat"
+      ],
+      "provenance": {
+        "buffer_bytes": "calculated",
+        "kv_bytes": "calculated",
+        "n_gpu_layers": "calculated",
+        "tokens_per_s_est": "estimated",
+        "total_bytes": "estimated",
+        "weights_bytes": "estimated"
+      },
+      "quant": {
+        "bpw": 8.5,
+        "file_bytes": null,
+        "format": "GGUF",
+        "name": "Q8_0"
+      },
+      "skipped_quants": [],
+      "tier": "confortavel",
+      "tokens_per_s_est": 8.73,
+      "total_bytes": 2298525456,
+      "ttft_s_est": null,
+      "weights_bytes": 1466250000
+    }
+  ],
+  "excluded": {
+    "incomplete": 0,
+    "task_mismatch": 0
+  },
+  "fixture": {
+    "description": "Plano derivado de entradas sint\u00e9ticas (fixture).",
+    "synthetic": true
+  },
+  "inputs": {
+    "catalog": {
+      "model_count": 4,
+      "oldest_verified_at": "2026-11-15",
+      "sha256": "426af8cfca239ffbae8775486460dbf8bc198ca951eabe54797c9b6a0af8ac54"
+    },
+    "intent": {
+      "batch": 1,
+      "commercial_use": false,
+      "ctx": 8192,
+      "kv_quant": "f16",
+      "tasks": [
+        "chat",
+        "code",
+        "embeddings"
+      ]
+    },
+    "system": {
+      "collected_at": "2026-11-15T12:00:00Z",
+      "cpu": {
+        "cores_efficiency": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": 0
+        },
+        "cores_logical": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": 8
+        },
+        "cores_performance": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": 4
+        },
+        "cores_physical": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": 4
+        },
+        "isa": {
+          "amx": {
+            "confidence": "high",
+            "source": "fixture",
+            "value": false
+          },
+          "avx2": {
+            "confidence": "high",
+            "source": "fixture",
+            "value": true
+          },
+          "avx512": {
+            "confidence": "high",
+            "source": "fixture",
+            "value": false
+          },
+          "neon": {
+            "confidence": "high",
+            "source": "fixture",
+            "value": false
+          },
+          "sve": {
+            "confidence": "high",
+            "source": "fixture",
+            "value": false
+          }
+        },
+        "model": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": "FIXTURE CPU 4C/8T"
+        },
+        "vendor": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": "GenuineIntel"
+        }
+      },
+      "disks": {
+        "confidence": "high",
+        "source": "fixture",
+        "value": [
+          {
+            "free_bytes": {
+              "confidence": "high",
+              "source": "fixture",
+              "value": 400000000000
+            },
+            "kind": {
+              "confidence": "medium",
+              "source": "fixture",
+              "value": "hdd"
+            },
+            "mount": "/",
+            "total_bytes": {
+              "confidence": "high",
+              "source": "fixture",
+              "value": 1000000000000
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "description": "Perfil 1 (SINT\u00c9TICO): notebook CPU-only, 8 GiB DDR4 single-channel, HDD. Nenhum valor \u00e9 medi\u00e7\u00e3o real.",
+        "synthetic": true
+      },
+      "gpus": {
+        "confidence": "medium",
+        "source": "fixture",
+        "value": []
+      },
+      "kind": "system",
+      "memory": {
+        "bandwidth_bytes_per_s": {
+          "confidence": "medium",
+          "note": "2666 MT/s * 1 canal * 8 bytes",
+          "source": "fixture",
+          "value": 21328000000
+        },
+        "channels": {
+          "confidence": "medium",
+          "source": "fixture",
+          "value": 1
+        },
+        "ram_total_bytes": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": 8589934592
+        },
+        "speed_mts": {
+          "confidence": "medium",
+          "source": "fixture",
+          "value": 2666
+        },
+        "swap_total_bytes": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": 4294967296
+        },
+        "type": {
+          "confidence": "medium",
+          "source": "fixture",
+          "value": "DDR4"
+        },
+        "unified": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": false
+        }
+      },
+      "os": {
+        "arch": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": "x86_64"
+        },
+        "kernel": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": "6.8.0-fixture"
+        },
+        "name": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": "Ubuntu"
+        },
+        "version": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": "24.04"
+        }
+      },
+      "platform": "linux",
+      "power": {
+        "has_battery": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": true
+        },
+        "on_battery": {
+          "confidence": "high",
+          "source": "fixture",
+          "value": false
+        }
+      },
+      "probes": [
+        {
+          "message": "perfil sint\u00e9tico",
+          "probe": "fixture",
+          "status": "ok"
+        }
+      ],
+      "runtimes": {
+        "comfyui": {
+          "confidence": "high",
+          "source": "PATH",
+          "value": false
+        },
+        "llama_bench": {
+          "confidence": "high",
+          "source": "PATH",
+          "value": true
+        },
+        "llama_cli": {
+          "confidence": "high",
+          "source": "PATH",
+          "value": true
+        },
+        "llama_server": {
+          "confidence": "high",
+          "source": "PATH",
+          "value": true
+        },
+        "lm_studio": {
+          "confidence": "high",
+          "source": "PATH",
+          "value": false
+        },
+        "ollama": {
+          "confidence": "high",
+          "source": "PATH",
+          "value": false
+        },
+        "ollama_models": {
+          "confidence": "low",
+          "note": "ollama ausente do PATH",
+          "source": "ollama list",
+          "value": null
+        }
+      },
+      "schema_version": 1,
+      "scout_version": "0.1.0"
+    },
+    "tuning": {
+      "eta_cpu": 0.6,
+      "eta_gpu": 0.75,
+      "max_bpw_offload": 8.5,
+      "source": "default"
+    }
+  },
+  "kind": "feasibility",
+  "pools": [
+    {
+      "bandwidth_bytes_per_s": 21328000000,
+      "eta": 0.6,
+      "gpu_index": null,
+      "id": "cpu",
+      "provenance": {
+        "bandwidth_bytes_per_s": "measured",
+        "eta": "estimated",
+        "reserved_bytes": "calculated",
+        "total_bytes": "measured",
+        "usable_bytes": "calculated"
+      },
+      "reserved_bytes": 3000000000,
+      "total_bytes": 8589934592,
+      "usable_bytes": 5589934592
+    }
+  ],
+  "rejected": [
+    {
+      "closest": {
+        "by_pool": [
+          {
+            "budget_bytes": 5589934592,
+            "buffer_bytes": 563840000,
+            "kv_bytes": 1073741824,
+            "pool": "cpu",
+            "tier": "inviavel",
+            "total_bytes": 6047581824,
+            "weights_bytes": 4410000000
+          }
+        ],
+        "placement": "cpu_only",
+        "quant": {
+          "bpw": 4.9,
+          "file_bytes": 4410000000,
+          "format": "GGUF",
+          "name": "Q4_K_M"
+        },
+        "total_bytes": 6047581824
+      },
+      "message": "Nenhuma quant dentro do piso de qualidade cabe na mem\u00f3ria dispon\u00edvel.",
+      "missing_bytes": 737143962,
+      "model": {
+        "commercial_ok": true,
+        "id": "test/dense-7b",
+        "license": "apache-2.0",
+        "license_source": "https://example.invalid/test/dense-7b",
+        "n_layers": 32,
+        "params_active": 7200000000,
+        "params_total": 7200000000,
+        "source_url": "https://example.invalid/test/dense-7b",
+        "tasks": [
+          "chat",
+          "code"
+        ]
+      },
+      "provenance": {
+        "missing_bytes": "calculated"
+      },
+      "reason_code": "does_not_fit",
+      "skipped_quants": [
+        {
+          "format": "GGUF",
+          "name": "Q8_0",
+          "reason_code": "does_not_fit"
+        },
+        {
+          "format": "GGUF",
+          "name": "Q6_K",
+          "reason_code": "does_not_fit"
+        },
+        {
+          "format": "GGUF",
+          "name": "Q4_K_M",
+          "reason_code": "does_not_fit"
+        },
+        {
+          "format": "GGUF",
+          "name": "Q3_K_M",
+          "reason_code": "below_quality_floor"
+        }
+      ]
+    },
+    {
+      "closest": {
+        "by_pool": [
+          {
+            "budget_bytes": 5589934592,
+            "buffer_bytes": 563840000,
+            "kv_bytes": 805306368,
+            "pool": "cpu",
+            "tier": "inviavel",
+            "total_bytes": 16269146368,
+            "weights_bytes": 14900000000
+          }
+        ],
+        "placement": "cpu_only",
+        "quant": {
+          "bpw": 3.9733,
+          "file_bytes": 14900000000,
+          "format": "GGUF",
+          "name": "Q3_K_M"
+        },
+        "total_bytes": 16269146368
+      },
+      "message": "Nenhuma quant dentro do piso de qualidade cabe na mem\u00f3ria dispon\u00edvel.",
+      "missing_bytes": 10958708506,
+      "model": {
+        "commercial_ok": true,
+        "id": "test/moe-30b-a3b",
+        "license": "apache-2.0",
+        "license_source": "https://example.invalid/test/moe-30b-a3b",
+        "n_layers": 48,
+        "params_active": 3000000000,
+        "params_total": 30000000000,
+        "source_url": "https://example.invalid/test/moe-30b-a3b",
+        "tasks": [
+          "chat",
+          "code"
+        ]
+      },
+      "provenance": {
+        "missing_bytes": "calculated"
+      },
+      "reason_code": "does_not_fit",
+      "skipped_quants": [
+        {
+          "format": "GGUF",
+          "name": "Q6_K",
+          "reason_code": "does_not_fit"
+        },
+        {
+          "format": "GGUF",
+          "name": "Q4_K_M",
+          "reason_code": "does_not_fit"
+        },
+        {
+          "format": "GGUF",
+          "name": "Q3_K_M",
+          "reason_code": "does_not_fit"
+        },
+        {
+          "format": "GGUF",
+          "name": "Q2_K",
+          "reason_code": "below_quality_floor"
+        }
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "scout_version": "0.1.0",
+  "warnings": [
+    {
+      "code": "swap_not_a_fix",
+      "message": "Aumentar swap n\u00e3o faz modelo maior rodar: pesos paginados para disco derrubam a gera\u00e7\u00e3o para ~0,1 token/s. Alavancas, nesta ordem: KV em q8_0, menos contexto, bpw menor dentro do piso, modelo menor.",
+      "severity": "info"
+    },
+    {
+      "code": "hdd_storage",
+      "field": "disks.value[0].kind",
+      "message": "Disco rotativo em /: carregar o modelo ser\u00e1 lento.",
+      "severity": "warn"
+    }
+  ]
+}
