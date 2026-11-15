@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "kind": "system",
+  "scout_version": "0.1.0",
+  "collected_at": "2026-11-15T12:00:00Z",
+  "platform": "linux",
+  "fixture": {
+    "synthetic": true,
+    "description": "Perfil 2 (SINTÉTICO): desktop 16 GiB DDR4 dual-channel + GPU NVIDIA 12 GiB. Nenhum valor é medição real."
+  },
+  "os": {
+    "name": {
+      "value": "Ubuntu",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "version": {
+      "value": "24.04",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "kernel": {
+      "value": "6.8.0-fixture",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "arch": {
+      "value": "x86_64",
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "cpu": {
+    "model": {
+      "value": "FIXTURE CPU 6C/12T",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "vendor": {
+      "value": "GenuineIntel",
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_logical": {
+      "value": 12,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_physical": {
+      "value": 6,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_performance": {
+      "value": 6,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "cores_efficiency": {
+      "value": 0,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "isa": {
+      "avx2": {
+        "value": true,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "avx512": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "amx": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "neon": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      },
+      "sve": {
+        "value": false,
+        "source": "fixture",
+        "confidence": "high"
+      }
+    }
+  },
+  "memory": {
+    "ram_total_bytes": {
+      "value": 17179869184,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "type": {
+      "value": "DDR4",
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "speed_mts": {
+      "value": 3200,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "channels": {
+      "value": 2,
+      "source": "fixture",
+      "confidence": "medium"
+    },
+    "bandwidth_bytes_per_s": {
+      "value": 51200000000,
+      "source": "fixture",
+      "confidence": "medium",
+      "note": "3200 MT/s * 2 canais * 8 bytes"
+    },
+    "unified": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "swap_total_bytes": {
+      "value": 2147483648,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "gpus": {
+    "value": [
+      {
+        "index": 0,
+        "vendor": {
+          "value": "nvidia",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "name": {
+          "value": "FIXTURE NVIDIA 12GB (perfil 2)",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "vram_total_bytes": {
+          "value": 12884901888,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "vram_free_bytes": {
+          "value": 12400000000,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "bandwidth_bytes_per_s": {
+          "value": 360000000000,
+          "source": "fixture",
+          "confidence": "medium",
+          "note": "valor sintético, não é especificação de produto"
+        },
+        "driver_version": {
+          "value": "000.00-fixture",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "compute_capability": {
+          "value": "8.6",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "backend": {
+          "value": "cuda",
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "bf16": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "fp8": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        },
+        "flash_attention": {
+          "value": null,
+          "source": "fixture",
+          "confidence": "low"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "disks": {
+    "value": [
+      {
+        "mount": "/",
+        "kind": {
+          "value": "nvme",
+          "source": "fixture",
+          "confidence": "medium"
+        },
+        "total_bytes": {
+          "value": 500000000000,
+          "source": "fixture",
+          "confidence": "high"
+        },
+        "free_bytes": {
+          "value": 200000000000,
+          "source": "fixture",
+          "confidence": "high"
+        }
+      }
+    ],
+    "source": "fixture",
+    "confidence": "high"
+  },
+  "power": {
+    "has_battery": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    },
+    "on_battery": {
+      "value": false,
+      "source": "fixture",
+      "confidence": "high"
+    }
+  },
+  "runtimes": {
+    "ollama": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_cli": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_server": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "llama_bench": {
+      "value": true,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "lm_studio": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "comfyui": {
+      "value": false,
+      "source": "PATH",
+      "confidence": "high"
+    },
+    "ollama_models": {
+      "value": null,
+      "source": "ollama list",
+      "confidence": "low",
+      "note": "ollama ausente do PATH"
+    }
+  },
+  "probes": [
+    {
+      "probe": "fixture",
+      "status": "ok",
+      "message": "perfil sintético"
+    }
+  ]
+}

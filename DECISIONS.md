@@ -471,3 +471,22 @@ sai != 0 se o id não existir. Usado para remover
 - Sem Content-Length em POST → 411 com code `bad_request` (como A7). Helpers `load_tuning` e `run_plan`
   extraídos de `scout/cli.py` (plan inalterado).
 - Log: stderr, uma linha `METHOD path -> status`, sem query, sem cabeçalhos, sem corpo.
+
+## 2026-11-15 — Fase 5: decisões do frontend não cobertas pelas fontes
+
+**Decisão (agente `web`).**
+- CSP final no `<meta>`: `default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data:;
+  style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'` (sem inline script/style) e
+  `referrer: no-referrer`.
+- Três fixtures geradas pela CLI (não escritas à mão): `demo-feasibility.json` (ctx 8192), `demo-feasibility-rejeitados.json`
+  (mesmos insumos, `--ctx 40000`, para exercitar a tela Rejeitados) e `demo-system.json` (cópia de `sys_rtx3060.json`).
+  A fixture de rejeitados só cobre `ctx_exceeds_max`; o caminho `does_not_fit`/`missing_bytes` não tem dado real de demo.
+- Tabela de recomendações agrupa por tarefa de `inputs.intent.tasks`; um modelo com duas tarefas aparece nas duas, com chip
+  "principal" onde `primary_for` o inclui. Toggle comercial esconde `blocked` ou `commercial_ok !== true`, só lendo o JSON.
+- Proveniência de `quant.file_bytes` e da licença não está nos mapas `provenance`; a UI as rotula "catálogo" (origem real).
+- `scout bench` não existe na CLI desta versão; o "Próximo passo" mostra `scout bench --run <id>` (contrato do `/bench`) e
+  avisa na tela que ainda não executa.
+- LIVE: `POST /plan` sem `tasks` (todas), `commercial_use: false` (o toggle é filtro de exibição), ctx editável; fluxo
+  /health → /system → /plan; 401 limpa o token em memória. A porta do fragment tem precedência sobre o campo.
+- Um 403 de origem não permitida chega ao navegador sem CORS e é indistinguível de "servidor fora do ar"; a mensagem de erro
+  lista as três causas (servidor parado, PNA/Safari, origem fora da allowlist).

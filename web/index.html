@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>LocalAI Scout</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<a class="skip" href="#resultados">Ir para os resultados</a>
+<header class="top">
+  <h1>LocalAI Scout</h1>
+  <p class="tagline">Quais modelos de IA rodam de fato na sua máquina. Nenhum dado de hardware sai do seu navegador.</p>
+</header>
+
+<noscript>
+  <div class="banner banner-error" role="alert">
+    Esta página precisa de JavaScript para mostrar os resultados. Habilite o JavaScript, ou use a CLI:
+    <code>scout plan</code> imprime o mesmo diagnóstico no terminal.
+  </div>
+</noscript>
+
+<div id="status" class="status" role="status" aria-live="polite"></div>
+
+<main>
+  <section id="entrada" aria-labelledby="h-entrada">
+    <h2 id="h-entrada">1. Entrada</h2>
+    <p>Dois modos. <strong>ARQUIVO</strong> funciona sempre, sem servidor e offline: rode
+      <code>scout collect</code> e <code>scout plan --json &gt; feasibility.json</code> e envie o arquivo aqui.
+      <strong>LIVE</strong> fala com <code>scout serve</code> na sua máquina (exige Chrome ou Firefox recente;
+      no Safari use ARQUIVO).</p>
+    <p>Modo ativo: <strong id="modo">nenhum</strong></p>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>Modo ARQUIVO</h3>
+        <div id="drop" class="drop" tabindex="0" role="button" aria-label="Arrastar um arquivo JSON aqui, ou pressionar Enter para escolher">
+          Arraste <code>feasibility.json</code> ou <code>system.json</code> aqui,<br>ou pressione Enter para escolher.
+        </div>
+        <input id="file" type="file" accept=".json,application/json" class="visually-hidden" aria-label="Escolher arquivo JSON">
+        <label for="paste">Ou cole o JSON:</label>
+        <textarea id="paste" rows="5" spellcheck="false"></textarea>
+        <div class="row">
+          <button type="button" id="btn-paste">Ler JSON colado</button>
+          <button type="button" id="btn-demo">Carregar exemplo</button>
+          <button type="button" id="btn-demo2">Exemplo com rejeitados</button>
+          <button type="button" id="btn-demo3">Exemplo só system.json</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Modo LIVE</h3>
+        <p>Rode <code>scout serve</code> e abra o link que ele imprime. O token fica só em memória: recarregar a página exige parear de novo.</p>
+        <label for="port">Porta</label>
+        <input id="port" type="number" min="1" max="65535" value="8765">
+        <label for="token">Token (se não abriu pelo link)</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false">
+        <label for="ctx">Contexto (tokens)</label>
+        <input id="ctx" type="number" min="1" step="1" value="8192">
+        <div class="row">
+          <button type="button" id="btn-live">Conectar e calcular</button>
+          <button type="button" id="btn-refresh">Recoletar hardware</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="resultados" tabindex="-1"></div>
+</main>
+
+<footer class="foot">
+  Sem telemetria, sem analytics, sem fontes ou scripts de terceiros. Os números vêm do solver da CLI; esta página só os formata.
+</footer>
+</body>
+</html>
