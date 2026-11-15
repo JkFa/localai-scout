@@ -461,6 +461,7 @@ def _cmd_bench(args: argparse.Namespace) -> int:
         sys.stdout.write(f"{r['model_id']} [{tool}]: decode {r['decode_tps']:.2f} tok/s, banda efetiva "
                          f"{r['effective_bandwidth_bytes_per_s'] / 1e9:.1f} GB/s, "
                          f"{'estável' if r['stable'] else 'NÃO ESTABILIZOU em 6 rodadas (confiança rebaixada)'}\n")
+        sys.stderr.write(conditions_line(r) + "\n")
         if r["prefill_stable"] is False:
             sys.stdout.write("  prefill NÃO estabilizou: não entra na calibração\n")
     doc = {"schema_version": 1, "kind": "measured", "scout_version": __version__, "power": power,
@@ -492,6 +493,19 @@ def _add_calibration_flags(p: argparse.ArgumentParser) -> None:
                    help="calibration.json do scout bench (erro se não existir); senão SCOUT_CALIBRATION ou o padrão do SO")
     g.add_argument("--no-calibration", action="store_true",
                    help="não lê calibração nem consulta motor nenhum (tokens/s pelo eta)")
+
+
+def conditions_line(r: dict) -> str:
+    """Linha de diagnóstico (nunca afeta a calibração): governor/EPP, freq e temp antes->depois, swap usado."""
+    b, a = r["conditions"]["before"], r["conditions"]["after"]
+    f = lambda x, d=1: "?" if x is None else f"{x / d:.0f}"  # noqa: E731
+    used = [x for x in r["rounds"] if x["used_decode"] or x["used_prefill"]]
+    sw = [x.get("swap_in_pages") for x in used], [x.get("swap_out_pages") for x in used]
+    tot = ["?" if any(v is None for v in col) else str(sum(col)) for col in sw]
+    return (f"  condições: governor {b['scaling_governor'] or '?'}/EPP {b['energy_performance_preference'] or '?'}; "
+            f"freq média {f(b['freq_khz_mean'], 1000)}->{f(a['freq_khz_mean'], 1000)} MHz; "
+            f"temp máx {f(b['temp_max_millic'], 1000)}->{f(a['temp_max_millic'], 1000)} C; "
+            f"swap in/out nas rodadas usadas {tot[0]}/{tot[1]} páginas")
 
 
 def build_parser() -> argparse.ArgumentParser:

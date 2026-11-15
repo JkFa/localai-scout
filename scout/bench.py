@@ -197,6 +197,104 @@ def live_system() -> dict | None:
         return None
 
 
+# ------------------------------------------------------------ condições da máquina (só diagnóstico)
+
+CPU_SYSFS = "/sys/devices/system/cpu"
+
+
+def _read_file(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read(1_000_000)
+    except OSError:
+        return None
+
+
+def _list_dir(path: str) -> list[str] | None:
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return None
+
+
+def _int_or_none(txt: str | None) -> int | None:
+    try:
+        return int(txt.strip()) if txt is not None else None
+    except ValueError:
+        return None
+
+
+def _str_or_none(txt: str | None) -> str | None:
+    return txt.strip() or None if txt is not None else None
+
+
+def _meminfo_bytes(meminfo: str | None, key: str) -> int | None:
+    for line in (meminfo or "").splitlines():
+        if line.startswith(key + ":"):
+            parts = line.split()
+            if len(parts) >= 3 and parts[2].lower() == "kb" and parts[1].isdigit():
+                return int(parts[1]) * 1024
+    return None
+
+
+def read_conditions(system: str | None = None, reader: Callable[[str], str | None] = _read_file,
+                    lister: Callable[[str], list[str] | None] = _list_dir) -> dict:
+    """Condições da máquina para diagnóstico: NUNCA entra em calibração, comparação, estabilidade
+    ou confiança. Valor ilegível é None; fora do Linux, tudo None. Nunca levanta."""
+    empty: dict[str, Any] = {
+        "scaling_driver": None, "scaling_governor": None, "energy_performance_preference": None,
+        "freq_khz_mean": None, "freq_khz_max": None, "temp_max_millic": None, "temp_max_zone_type": None,
+        "loadavg": None, "mem_available_bytes": None, "swap_free_bytes": None}
+    if (system or {"Linux": "linux"}.get(platform.system())) != "linux":
+        return empty
+    out = dict(empty)
+    try:
+        c0 = f"{CPU_SYSFS}/cpu0/cpufreq"
+        out["scaling_driver"] = _str_or_none(reader(f"{c0}/scaling_driver"))
+        out["scaling_governor"] = _str_or_none(reader(f"{c0}/scaling_governor"))
+        out["energy_performance_preference"] = _str_or_none(reader(f"{c0}/energy_performance_preference"))
+        cpus = [n for n in (lister(CPU_SYSFS) or []) if n.startswith("cpu") and n[3:].isdigit()]
+        freqs = [f for f in (_int_or_none(reader(f"{CPU_SYSFS}/{n}/cpufreq/scaling_cur_freq")) for n in cpus)
+                 if f is not None]
+        if freqs:
+            out["freq_khz_mean"], out["freq_khz_max"] = sum(freqs) // len(freqs), max(freqs)
+        temps = []
+        for z in lister("/sys/class/thermal") or []:
+            if z.startswith("thermal_zone"):
+                t = _int_or_none(reader(f"/sys/class/thermal/{z}/temp"))
+                if t is not None:
+                    temps.append((t, _str_or_none(reader(f"/sys/class/thermal/{z}/type"))))
+        if temps:
+            out["temp_max_millic"], out["temp_max_zone_type"] = max(temps, key=lambda x: x[0])
+        la = (reader("/proc/loadavg") or "").split()
+        try:
+            out["loadavg"] = [float(x) for x in la[:3]] if len(la) >= 3 else None
+        except ValueError:
+            out["loadavg"] = None
+        mi = reader("/proc/meminfo")
+        out["mem_available_bytes"] = _meminfo_bytes(mi, "MemAvailable")
+        out["swap_free_bytes"] = _meminfo_bytes(mi, "SwapFree")
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def read_swap_counters(reader: Callable[[str], str | None] = _read_file) -> tuple[int, int] | None:
+    """(pswpin, pswpout) de /proc/vmstat, em páginas; None se ilegível."""
+    vals: dict[str, int] = {}
+    for line in (reader("/proc/vmstat") or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in ("pswpin", "pswpout") and parts[1].isdigit():
+            vals[parts[0]] = int(parts[1])
+    return (vals["pswpin"], vals["pswpout"]) if len(vals) == 2 else None
+
+
+def swap_delta(before: tuple[int, int] | None, after: tuple[int, int] | None) -> dict[str, int | None]:
+    if before is None or after is None:
+        return {"swap_in_pages": None, "swap_out_pages": None}
+    return {"swap_in_pages": max(after[0] - before[0], 0), "swap_out_pages": max(after[1] - before[1], 0)}
+
+
 # ------------------------------------------------------------ estabilização (pura)
 
 
@@ -453,7 +551,21 @@ def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str
 
         def fn(n: int) -> Round:
             return llama_bench_round(gguf, target)[0]
+    swaps: dict[int, dict[str, int | None]] = {}
+    raw_fn = fn
+
+    def fn(n: int) -> Round:  # noqa: F811 - mede o delta de swap por rodada, só diagnóstico
+        b = read_swap_counters()
+        r = raw_fn(n)
+        swaps[n] = swap_delta(b, read_swap_counters())
+        return r
+    cond_before = read_conditions()
     res = stabilize(fn)
+    cond_after = read_conditions()
+    nil = {"swap_in_pages": None, "swap_out_pages": None}
+    res["warmup"].update(swaps.get(0, nil))
+    for r in res["rounds"]:
+        r.update(swaps.get(r["round"], nil))
     version = engine_version(tool)
     bw = int(round(target.bytes_per_token * res["decode_tps"]))
     return {
@@ -465,6 +577,7 @@ def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str
         "decode_tps": res["decode_tps"], "stable": res["stable"],
         "prefill_tps": res["prefill_tps"], "prefill_stable": res["prefill_stable"],
         "bytes_per_token": target.bytes_per_token, "effective_bandwidth_bytes_per_s": bw,
+        "conditions": {"before": cond_before, "after": cond_after},
         "power": power, "on_battery_warning": power["on_ac"] is False,
         "measured_at": now().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

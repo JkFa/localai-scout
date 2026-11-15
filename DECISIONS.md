@@ -776,3 +776,7 @@ bench mediu 15,0 GB/s e marcou `stable`: pressão de memória ainda não é conf
   Ollama ou do llama-bench. `ollama_check_quant` devolve só a arquitetura.
 - Bench lê o arquivo existente antes de medir (malformado = erro antes de gastar tempo) e usa a origem `default` na
   leitura, para `--calibration` apontar para um arquivo novo sem erro.
+- `conditions` no measured.json (só diagnóstico): três medições do mesmo estado declarado (tomada/performance) deram
+  7,94, 8,52 e 9,95 tok/s, com o prefill subindo junto. Gravamos governor/EPP, frequência, temperatura, loadavg, memória
+  e o delta de swap por rodada (before/after de cada modelo) para testar as hipóteses de frequência, calor e carga de
+  fundo. Nada disso entra no calibration.json, na comparação, na estabilidade nem na confiança.

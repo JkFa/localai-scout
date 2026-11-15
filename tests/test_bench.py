@@ -454,3 +454,56 @@ def test_cli_run_merges_into_existing_file(monkeypatch, tmp_path):
     assert main(argv + ["--run"]) == 0
     entries = json.loads(cal.read_text())["pools"]["cpu"]
     assert [e["power"]["on_ac"] for e in entries] == [True, False]
+
+
+# ---- condições (diagnóstico)
+
+def _fs(files):
+    return (lambda p: files.get(p)), (lambda p: sorted({k[len(p) + 1:].split("/")[0] for k in files if k.startswith(p + "/")}) or None)
+
+
+def test_read_conditions_normal_missing_and_garbage():
+    c = "/sys/devices/system/cpu"
+    files = {f"{c}/cpu0/cpufreq/scaling_driver": "amd-pstate-epp\n", f"{c}/cpu0/cpufreq/scaling_governor": "powersave\n",
+             f"{c}/cpu0/cpufreq/energy_performance_preference": "performance\n",
+             f"{c}/cpu0/cpufreq/scaling_cur_freq": "2000000\n", f"{c}/cpu1/cpufreq/scaling_cur_freq": "3000000\n",
+             f"{c}/cpu2/cpufreq/scaling_cur_freq": "lixo", f"{c}/cpufreq/x": "1",
+             "/sys/class/thermal/thermal_zone0/temp": "45000\n", "/sys/class/thermal/thermal_zone0/type": "acpitz\n",
+             "/sys/class/thermal/thermal_zone1/temp": "71000\n", "/sys/class/thermal/thermal_zone1/type": "x86_pkg\n",
+             "/sys/class/thermal/thermal_zone2/temp": "???",
+             "/proc/loadavg": "0.50 1.25 2.00 1/300 999\n",
+             "/proc/meminfo": "MemTotal: 100 kB\\nMemAvailable:    2048 kB\\nSwapFree:  4 kB\\n".replace("\\n", "\n")}
+    r, l = _fs(files)
+    got = B.read_conditions("linux", r, l)
+    assert got["scaling_driver"] == "amd-pstate-epp" and got["energy_performance_preference"] == "performance"
+    assert got["freq_khz_mean"] == 2_500_000 and got["freq_khz_max"] == 3_000_000
+    assert got["temp_max_millic"] == 71000 and got["temp_max_zone_type"] == "x86_pkg"
+    assert got["loadavg"] == [0.5, 1.25, 2.0]
+    assert got["mem_available_bytes"] == 2048 * 1024 and got["swap_free_bytes"] == 4096
+    r, l = _fs({"/proc/loadavg": "lixo", "/proc/meminfo": "MemAvailable: abc kB"})
+    bad = B.read_conditions("linux", r, l)
+    assert all(v is None for v in bad.values())
+    assert all(v is None for v in B.read_conditions("darwin").values())
+
+    def boom(p):
+        raise RuntimeError
+    assert all(v is None for v in B.read_conditions("linux", boom, boom).values())
+
+
+def test_swap_counters_and_delta():
+    r = lambda p: "nr_free 1\npswpin 10\npswpout 20\n"  # noqa: E731
+    assert B.read_swap_counters(r) == (10, 20)
+    assert B.read_swap_counters(lambda p: "pswpin x") is None and B.read_swap_counters(lambda p: None) is None
+    assert B.swap_delta((10, 20), (15, 20)) == {"swap_in_pages": 5, "swap_out_pages": 0}
+    assert B.swap_delta(None, (1, 1)) == {"swap_in_pages": None, "swap_out_pages": None}
+
+
+def test_measure_records_conditions_and_swap_per_round(monkeypatch, fixed_env):
+    t = target()
+    monkeypatch.setattr(B, "_ollama_request", FakeOllama({"dense:7b": t.file_bytes}, [1.0, 1.0, 1.0]))
+    monkeypatch.setattr(B, "read_conditions", lambda *a, **k: {"scaling_governor": "g"})
+    ctr = iter(range(0, 1000, 3))
+    monkeypatch.setattr(B, "read_swap_counters", lambda *a, **k: (next(ctr), 0))
+    r = B.measure_model(t, "ollama", None, "dense:7b", AC)
+    assert r["conditions"] == {"before": {"scaling_governor": "g"}, "after": {"scaling_governor": "g"}}
+    assert r["warmup"]["swap_in_pages"] == 3 and all(x["swap_in_pages"] == 3 and x["swap_out_pages"] == 0 for x in r["rounds"])
