@@ -350,7 +350,9 @@ com energia e motor injetados) falha a menos que:
    `{on_ac: false, profile: "balanced"}` de banda = metade da medida e o plan
    na bateria/balanced → `same`, tokens/s ≈ metade; com o plan na
    bateria/performance (nenhuma casa) → `other_state`, entrada escolhida = a de
-   menor banda, um nível abaixo, mensagem contendo "na tomada" e "na bateria";
+   menor banda, um nível abaixo, mensagem nomeando o estado da entrada
+   escolhida e o atual por extenso; com só a entrada da tomada e o plan na
+   bateria → mensagem contendo "na tomada" e "na bateria";
 8. **energia não aplicável:** arquivo e plan com
    `{on_ac: null, profile: null, not_applicable: ["on_ac", "profile"]}` →
    `same` e confiança high; com o plan em `profile` null fora de
