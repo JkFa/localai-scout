@@ -101,7 +101,7 @@ def test_dmidecode_denied_has_no_data():
 
 def test_ram_bandwidth_policy():
     table = json.loads((C.DATA / "bandwidth_tables.json").read_text(encoding="utf-8"))
-    assert P.ram_bandwidth(3200, 2, "DDR4", table)[:3] == (51_200_000_000, "estimate:mts*channels*8", "medium")
+    assert P.ram_bandwidth(3200, 2, "DDR4", table, data_width_bits=64)[:3] == (51_200_000_000, "estimate:mts*channels*data_width/8", "medium")
     bw, src, conf, _ = P.ram_bandwidth(None, None, "DDR5", table)
     assert bw == 76_800_000_000 and src.startswith("estimate:") and conf == "low"
     bw, src, conf, _ = P.ram_bandwidth(None, None, None, table)
@@ -124,11 +124,52 @@ def test_lsblk_disks():
     assert P.parse_lsblk_json("não é json") == []
 
 
-def test_power():
-    assert P.parse_power([{"type": "Mains", "status": None}]) == (False, False)
-    assert P.parse_power([{"type": "Battery", "status": "Discharging"}]) == (True, True)
-    assert P.parse_power([{"type": "Battery", "status": "Charging"}, {"type": "Mains"}]) == (True, False)
-    assert P.parse_power([{"type": "Battery", "status": "Unknown"}]) == (True, None)
+def sup(type_, status=None, online=None, scope=None):
+    return {"type": type_, "status": status, "online": online, "scope": scope}
+
+
+def test_power_mains_online_wins_over_battery_status():
+    assert P.parse_power([sup("Mains", online="1"), sup("Battery", "Discharging")]) == (True, False)
+    assert P.parse_power([sup("USB", online="1"), sup("Battery", "Not charging")]) == (True, False)
+
+
+def test_power_all_mains_offline_is_battery_even_if_status_says_full():
+    # defeito original: status "Full"/"Not charging" era lido como tomada sem olhar `online`
+    assert P.parse_power([sup("Mains", online="0"), sup("Battery", "Full")]) == (True, True)
+    assert P.parse_power([sup("Mains", online="0"), sup("USB_C", online="0"), sup("Battery", "Not charging")]) == (True, True)
+
+
+def test_power_multiple_supplies_any_online():
+    assert P.parse_power([sup("Mains", online="0"), sup("USB", online="1"), sup("Battery", "Charging")]) == (True, False)
+
+
+def test_power_no_mains_uses_discharging_only():
+    assert P.parse_power([sup("Battery", "Discharging")]) == (True, True)
+    assert P.parse_power([sup("Battery", "Full")]) == (True, None)
+    assert P.parse_power([sup("Battery", "Charging")]) == (True, None)
+
+
+def test_power_contradiction_is_unknown_and_no_battery():
+    assert P.parse_power([sup("Mains", online="0"), sup("Battery", "Charging")]) == (True, None)
+    assert P.parse_power([sup("Mains", online="1")]) == (False, False)
+    assert P.parse_power([sup("Battery", "Discharging", scope="Device")]) == (False, False)  # bateria de periférico
+
+
+def test_collect_power_reads_sysfs_tree(monkeypatch, tmp_path):
+    root = tmp_path / "ps"
+    for name, files in {"AC0": {"type": "Mains", "online": "0"},
+                        "BAT0": {"type": "Battery", "status": "Not charging"}}.items():
+        (root / name).mkdir(parents=True)
+        for k, v in files.items():
+            (root / name / k).write_text(v + "\n")
+    real_open, real_listdir = open, C.os.listdir
+    monkeypatch.setattr(C.os, "listdir", lambda p: real_listdir(root) if p == "/sys/class/power_supply" else real_listdir(p))
+    import builtins
+    monkeypatch.setattr(builtins, "open", lambda p, *a, **k: real_open(str(p).replace("/sys/class/power_supply", str(root)), *a, **k))
+    pw = C.collect_power("linux", C.Probes())
+    assert pw["has_battery"]["value"] is True and pw["on_battery"]["value"] is True
+    (root / "AC0" / "online").write_text("1\n")  # relido a cada coleta, sem cache
+    assert C.collect_power("linux", C.Probes())["on_battery"]["value"] is False
 
 
 def test_ollama_list():
@@ -315,9 +356,9 @@ def test_f3_count_fallback_lowers_bandwidth_confidence():
 
 
 def test_f3_bandwidth_never_more_confident_than_inputs():
-    assert P.ram_bandwidth(3200, 2, "DDR4", None, "medium", "medium")[2] == "medium"
-    assert P.ram_bandwidth(3200, 2, "DDR4", None, "low", "medium")[2] == "low"
-    assert P.ram_bandwidth(3200, 2, "DDR4", None, "high", "high")[2] == "medium"
+    assert P.ram_bandwidth(3200, 2, "DDR4", None, "medium", "medium", 64)[2] == "medium"
+    assert P.ram_bandwidth(3200, 2, "DDR4", None, "low", "medium", 64)[2] == "low"
+    assert P.ram_bandwidth(3200, 2, "DDR4", None, "high", "high", 64)[2] == "medium"
 
 
 URL_BW = "https://www.nvidia.com/a"
@@ -407,3 +448,58 @@ def test_discrete_amd_not_in_table_is_null_without_formula(monkeypatch):
     doc = _rocm_igpu(monkeypatch, vram_vendor=True, dmi=True)
     bw = doc["gpus"]["value"][0]["bandwidth_bytes_per_s"]
     assert bw["value"] is None and bw["confidence"] == "low" and bw["source"] != "igpu_shares_ram"
+
+
+def _dmi(widths, mts=5500, typ="DDR4", total=None, chan=True):
+    blocks = []
+    for i, w in enumerate(widths):
+        lines = ["Memory Device"]
+        if total:
+            lines.append(f"\tTotal Width: {total} bits")
+        if w:
+            lines.append(f"\tData Width: {w} bits")
+        lines += ["\tSize: 4 GB", "\tLocator: DIMM 0", f"\tBank Locator: P0 CHANNEL {'AB'[i]}" if chan else "\tBank Locator: BANK 0",
+                  f"\tType: {typ}", f"\tConfigured Memory Speed: {mts} MT/s"]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + "\n"
+
+
+def _bw(text, table=None):
+    d = P.parse_dmidecode(text)
+    ch_conf = "medium" if d.get("channels_exact") else "low"
+    return d, P.ram_bandwidth(d["speed_mts"], d["channels"], d["type"], table, "medium", ch_conf, d["data_width_bits"])
+
+
+def test_r_dmidecode_lpddr5_shaped_as_ddr4_file():
+    d, bw = _bw(txt("dmidecode_32bit_2ch.txt"))
+    assert d["data_width_bits"] == 32 and d["channels"] == 2 and d["channels_exact"]
+    assert bw[0] == 44_000_000_000 and bw[2] == "medium"
+
+
+def test_r_width_64_32_absent_and_total_ne_data():
+    assert _bw(_dmi([64, 64], 3200))[1][0] == 51_200_000_000
+    d, bw = _bw(_dmi([None, None], 5500))
+    assert d["data_width_bits"] is None and bw[0] == 5500 * 2 * 64 // 8 * 10**6 and bw[2] == "low"
+    d, bw = _bw(_dmi([128, 128], 3200))  # fora de {32, 64}
+    assert bw[0] == 3200 * 2 * 8 * 10**6 and bw[2] == "low"
+    d, bw = _bw(_dmi([64, 64], 3200, total=72))  # ECC: Total Width 72 é ignorado
+    assert d["data_width_bits"] == 64 and bw[0] == 51_200_000_000 and bw[2] == "medium"
+    d, bw = _bw(_dmi([32, 64], 3200))  # módulos com larguras diferentes: indeterminado
+    assert d["data_width_bits"] is None and bw[2] == "low"
+
+
+def test_r_module_count_channels_keeps_low():
+    d, bw = _bw(_dmi([64, 64], 3200, chan=False))
+    assert not d["channels_exact"] and bw[2] == "low"
+
+
+def test_r_type_divergence_noted_value_kept(monkeypatch, tmp_path):
+    _no_tools(monkeypatch)
+    f = tmp_path / "m.txt"
+    f.write_text(txt("dmidecode_32bit_2ch.txt"), encoding="utf-8")
+    doc = C.collect(str(f))
+    assert_valid("system.schema.json", doc)
+    m = doc["memory"]
+    assert m["type"]["value"] == "DDR4" and "divergente" in m["type"]["source"] and "5500" in m["type"]["note"]
+    assert m["bandwidth_bytes_per_s"]["value"] == 44_000_000_000
+    assert P.type_divergence("DDR4", 3200, 64) is None and P.type_divergence("DDR5", 5500, 32) is None

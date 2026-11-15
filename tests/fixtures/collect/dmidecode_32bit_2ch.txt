@@ -1,0 +1,22 @@
+# dmidecode 3.5
+Handle 0x0010, DMI type 17, 40 bytes
+Memory Device
+	Total Width: 32 bits
+	Data Width: 32 bits
+	Size: 4 GB
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL A
+	Type: DDR4
+	Speed: 5500 MT/s
+	Configured Memory Speed: 5500 MT/s
+
+Handle 0x0011, DMI type 17, 40 bytes
+Memory Device
+	Total Width: 32 bits
+	Data Width: 32 bits
+	Size: 4 GB
+	Locator: DIMM 0
+	Bank Locator: P0 CHANNEL B
+	Type: DDR4
+	Speed: 5500 MT/s
+	Configured Memory Speed: 5500 MT/s
