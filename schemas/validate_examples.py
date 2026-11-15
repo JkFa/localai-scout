@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from jsonschema import Draft202012Validator, RefResolver
+from jsonschema import Draft202012Validator
 
 HERE = Path(__file__).parent
 SCHEMAS = {p.name: json.loads(p.read_text()) for p in HERE.glob("*.schema.json")}
@@ -18,7 +18,18 @@ STORE = {s["$id"]: s for s in SCHEMAS.values()}
 def validator(name: str) -> Draft202012Validator:
     schema = SCHEMAS[name]
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, resolver=RefResolver.from_schema(schema, store=STORE))
+    try:  # jsonschema >= 4.18
+        from referencing import Registry, Resource
+        from referencing.jsonschema import DRAFT202012
+
+        registry = Registry().with_resources(
+            [(i, Resource.from_contents(s, default_specification=DRAFT202012)) for i, s in STORE.items()]
+        )
+        return Draft202012Validator(schema, registry=registry)
+    except ImportError:  # jsonschema antigo
+        from jsonschema import RefResolver
+
+        return Draft202012Validator(schema, resolver=RefResolver.from_schema(schema, store=STORE))
 
 
 def load(name: str) -> dict:
