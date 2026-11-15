@@ -780,3 +780,15 @@ bench mediu 15,0 GB/s e marcou `stable`: pressão de memória ainda não é conf
   7,94, 8,52 e 9,95 tok/s, com o prefill subindo junto. Gravamos governor/EPP, frequência, temperatura, loadavg, memória
   e o delta de swap por rodada (before/after de cada modelo) para testar as hipóteses de frequência, calor e carga de
   fundo. Nada disso entra no calibration.json, na comparação, na estabilidade nem na confiança.
+
+## 2026-11-15 — referência do critério de pronto da calibração passa a ser a medição reproduzível
+
+**Decisão (humano).** O critério de pronto da calibração (bench_spec.md e calibration_store_spec.md) passa a comparar
+com 9,9 tok/s de decode / 24,8 GB/s efetivos (Qwen3-4B Q4_K_M, Ryzen 5 7520U, tomada, perfil performance, governor
+performance, EPP performance, Ollama 0.17.6). A medição à mão (7,94 tok/s, 19,8 GB/s) fica como histórico.
+**Evidência.** Três benches no mesmo estado, com condições gravadas no measured.json: 9,95 (18:20), 9,87 e 9,85
+tok/s, prefill 20,2–20,4. As remedições chegaram a 96 °C e à mesma velocidade; troca de swap de dezenas de MB nas
+rodadas também não mudou o resultado. Medições anteriores mais lentas (7,94 à mão, 8,52 às 14:25) não registravam
+condições, e a causa não pode ser recuperada; a suspeita mais forte é pressão de memória (às 14:25 a máquina saía de
+7,5 GB em swap). Pressão pesada derruba o decode: 5,99 tok/s com 316 MB livres e swap ativo.
+**Consequência.** Qualquer divergência futura deste tamanho fica diagnosticável pelo bloco `conditions`.
