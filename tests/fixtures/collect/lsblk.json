@@ -1,0 +1,11 @@
+{"blockdevices": [
+ {"name":"loop0","rota":false,"tran":null,"type":"loop","mountpoints":["/snap/bare/5"]},
+ {"name":"zram0","rota":false,"tran":null,"type":"disk","mountpoints":["[SWAP]"]},
+ {"name":"sda","rota":true,"tran":"usb","type":"disk","mountpoints":[null],"children":[
+   {"name":"sda1","rota":true,"tran":null,"type":"part","mountpoints":["/media/alguem/PEN"]}]},
+ {"name":"nvme0n1","rota":false,"tran":"nvme","type":"disk","mountpoints":[null],"children":[
+   {"name":"nvme0n1p1","type":"part","mountpoints":["/boot/efi"]},
+   {"name":"nvme0n1p2","type":"part","mountpoints":["/"]}]},
+ {"name":"sdb","rota":true,"tran":"sata","type":"disk","mountpoints":[null],"children":[
+   {"name":"sdb1","type":"part","mountpoints":["/home"]}]}
+]}

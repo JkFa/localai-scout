@@ -1,0 +1,27 @@
+processor	: 0
+vendor_id	: GenuineIntel
+model name	: Test CPU
+cpu cores	: 2
+physical id	: 0
+flags		: fpu avx2
+
+processor	: 1
+vendor_id	: GenuineIntel
+model name	: Test CPU
+cpu cores	: 2
+physical id	: 0
+flags		: fpu avx2
+
+processor	: 2
+vendor_id	: GenuineIntel
+model name	: Test CPU
+cpu cores	: 2
+physical id	: 0
+flags		: fpu avx2
+
+processor	: 3
+vendor_id	: GenuineIntel
+model name	: Test CPU
+cpu cores	: 2
+physical id	: 0
+flags		: fpu avx2

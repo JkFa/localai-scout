@@ -1,0 +1,8 @@
+Architecture:                            x86_64
+CPU(s):                                  8
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD Ryzen 5 7520U with Radeon Graphics
+Thread(s) per core:                      2
+Core(s) per socket:                      4
+Socket(s):                               1
+Flags:                                   fpu vme sse sse2 avx avx2 fma sha_ni svm

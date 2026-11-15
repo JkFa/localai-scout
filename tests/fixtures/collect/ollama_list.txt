@@ -1,0 +1,3 @@
+NAME                  ID              SIZE      MODIFIED      
+qwen3:4b-instruct     0edcdef34593    2.5 GB    4 months ago     
+tiny:latest           aaaaaaaaaaaa    637 MB    2 weeks ago     

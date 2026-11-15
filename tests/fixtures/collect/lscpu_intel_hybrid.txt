@@ -1,0 +1,8 @@
+Architecture:                         x86_64
+CPU(s):                               20
+Vendor ID:                            GenuineIntel
+Model name:                           12th Gen Intel(R) Core(TM) i7-12700H
+Thread(s) per core:                   2
+Core(s) per socket:                   14
+Socket(s):                            1
+Flags:                                fpu sse2 avx avx2 avx512f avx512bw amx_tile amx_bf16 fma
