@@ -118,7 +118,7 @@ def render_markdown(f: dict) -> str:
                 f"| [{c['model']['id']}]({c['model']['source_url']}) | {q['format']} {q['name']} "
                 f"| {c['placement']} | {c['n_gpu_layers']}/{c['model']['n_layers']} "
                 f"| {_warn(_est(fmt_gb(c['total_bytes']), c['provenance'], 'total_bytes'), c)} | {c['tier']} "
-                f"| {_warn(_fmt_tps(c['tokens_per_s_est']), c)} "
+                f"| {'—' if 'decode_not_applicable' in c['confidence_reasons'] else _warn(_fmt_tps(c['tokens_per_s_est']), c)} "
                 f"| {c['confidence']} | {'; '.join(notes)} |")
         lines += ["", "Memória por pool:", ""]
         pool_prov = {p["id"]: p["provenance"] for p in f["pools"]}

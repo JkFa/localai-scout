@@ -617,3 +617,28 @@ interpretação.
   Mains/USB* `online=1` => AC; todos `online=0` => bateria (contradição com bateria `Charging` => null); sem Mains legível,
   só `Discharging` prova bateria, o resto é null. Baterias com `scope=Device` (periféricos) são ignoradas. Lido a cada coleta,
   sem cache. Não reproduzi o defeito original (esta máquina estava na tomada); a causa vem da análise do código.
+
+## 2026-11-15 — embeddings sem decode e aviso de prefill lento
+
+**Contexto.** Validação em hardware real: tokens/s por banda (decode) foi
+exibido para modelos de embeddings, que não geram texto; e o prefill em CPU,
+que o solver não estima, domina a espera do usuário (medido 11,7 tok/s de
+prefill num Ryzen 5 7520U com Qwen3-4B Q4_K_M).
+
+**Decisão (humano).**
+- Candidato cuja única tarefa avaliada é embeddings: `tokens_per_s_est`
+  null, nota `decode_not_applicable` (métrica aplicável = throughput de
+  prefill, não estimado) e `confidence_reasons` `decode_not_applicable` no
+  lugar de `bandwidth_unknown`/`ranked_by_bytes`/`eta_default`/
+  `bandwidth_estimated` (nenhum deles afeta número desse candidato; com isso
+  a confiança fica high salvo fallback de pesos ou hardware low). Placement e
+  ordem pelo desempate por bytes (F4). Markdown mostra "—".
+- Aviso `slow_prefill_cpu` (warn) quando algum candidato não-embeddings roda
+  em cpu_only ou em hybrid com maioria das camadas na CPU (escolha do
+  `nucleo`: maioria = n_layers − n_gpu > n_gpu). Candidatos só de embeddings
+  não disparam: a referência é de um LLM e mediria outra coisa.
+- A ordem de grandeza vem de `data/tuning.json` → `prefill_reference`
+  (medição, com máquina, ferramenta, data e energia), ecoada em
+  `inputs.tuning`. A mensagem deriva "~N tok/s" e "prompt de M tokens ≈ um
+  minuto" (M = tok/s × 60, 2 algarismos significativos) do valor; sem o
+  bloco, sai sem número. `ttft_s_est` continua null.

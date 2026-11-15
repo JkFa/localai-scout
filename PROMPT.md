@@ -167,7 +167,24 @@ ttft_s_est separado de tokens_per_s_est: prefill é limitado por computação e
 decode por banda de memória, e o usuário sente os dois de formas diferentes.
 
 Enquanto não houver fórmula de prefill nem medição, ttft_s_est = null com o
-motivo ttft_unspecified (DECISIONS.md A17). Se falta a banda de um trecho que
+motivo ttft_unspecified (DECISIONS.md A17).
+
+Embeddings não fazem decode autoregressivo: esta fórmula não se aplica. Modelo
+cuja única tarefa avaliada é embeddings sai com tokens_per_s_est = null, nota
+decode_not_applicable (a métrica aplicável é throughput de prefill, ainda não
+estimado) e confidence_reasons decode_not_applicable, sem eta_default,
+bandwidth_* nem ranked_by_bytes; continua ordenável pelo desempate por bytes
+(DECISIONS.md, "embeddings sem decode e aviso de prefill lento").
+
+Prefill na CPU é lento e não é estimado. Se algum candidato que não é só de
+embeddings roda em cpu_only, ou em hybrid com mais camadas na CPU que na GPU,
+o plano ganha o aviso slow_prefill_cpu (warn). A ordem de grandeza vem de uma
+MEDIÇÃO em data/tuning.json, bloco prefill_reference {tokens_per_s,
+measured_on, tool, date, power}, nunca de literal no código: a mensagem cita
+~round(tokens_per_s) tokens/s na máquina medida e "um prompt de N tokens leva
+perto de um minuto", com N = tokens_per_s * 60 em 2 algarismos
+significativos. Sem o bloco, o aviso sai sem número. O bloco é ecoado em
+inputs.tuning.prefill_reference. Se falta a banda de um trecho que
 tem camadas, tokens_per_s_est = null (DECISIONS.md Q5). No JSON,
 tokens_per_s_est sai arredondado em 2 casas; se o arredondamento der 0, sai o
 valor cru (código da Fase 1; sem entrada própria em DECISIONS.md).
@@ -255,7 +272,9 @@ não a menor que cabe. Um candidato blocked continua no relatório, marcado,
 mas nunca como recomendação principal.
 
 Contexto efetivo de embeddings: o candidato registra o ctx usado no KV e no
-buffer em ctx_effective. Modelo avaliado também para outra tarefa continua
+buffer em ctx_effective. Embeddings não têm tokens/s de decode: tokens/s null
+e nota decode_not_applicable; placement e ordem saem pelo desempate por bytes
+(ver Throughput). Modelo avaliado também para outra tarefa continua
 rejeitado por ctx_exceeds_max (DECISIONS.md, "embeddings usam ctx efetivo").
 
 Bloqueio comercial: commercial_ok false -> blocked_reason non_commercial;

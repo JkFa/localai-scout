@@ -42,7 +42,11 @@
             "eta_gpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
             "eta_cpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
             "source": {"enum": ["default", "calibrated"], "description": "calibrated = ajustado por `scout bench --run` nesta máquina."},
-            "max_bpw_offload": {"type": "number", "exclusiveMinimum": 0, "description": "Acima deste bpw o placement hybrid não é avaliado (m7_fixes.md Fa)."}
+            "max_bpw_offload": {"type": "number", "exclusiveMinimum": 0, "description": "Acima deste bpw o placement hybrid não é avaliado (m7_fixes.md Fa)."},
+            "prefill_reference": {"type": "object", "description": "Medição real de prefill em CPU usada no aviso slow_prefill_cpu. Nunca estimativa.",
+              "required": ["tokens_per_s", "measured_on", "tool", "date"], "additionalProperties": false,
+              "properties": {"tokens_per_s": {"type": "number", "exclusiveMinimum": 0}, "measured_on": {"type": "string", "minLength": 1},
+                "tool": {"type": "string", "minLength": 1}, "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}, "power": {"type": "string"}}}
           }
         }
       }
@@ -184,11 +188,11 @@
         "tokens_per_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null se faltar banda do pool."},
         "notes": {"type": "array", "description": "Opcional (m7_fixes.md R3). Decisões do solver que afetaram este candidato sem gerar rejeição; ordem = ordem de avaliação das quants.",
           "items": {"type": "object", "required": ["code", "message"], "additionalProperties": false,
-            "properties": {"code": {"enum": ["offload_skipped_above_bpw"]}, "message": {"type": "string", "minLength": 1}}}},
+            "properties": {"code": {"enum": ["offload_skipped_above_bpw", "decode_not_applicable"]}, "message": {"type": "string", "minLength": 1}}}},
         "ctx_effective": {"type": "integer", "minimum": 1, "description": "Só em modelos avaliados apenas para embeddings: min(intent.ctx, ctx_max), o contexto usado no KV e no buffer (DECISIONS.md)."},
         "ttft_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null enquanto a fórmula de prefill não for especificada (DECISIONS.md)."},
         "confidence": {"$ref": "#/$defs/confidence"},
-        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified", "ranked_by_bytes"]}},
+        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified", "ranked_by_bytes", "decode_not_applicable"]}},
         "blocked": {"type": "boolean"},
         "blocked_reason": {"enum": ["non_commercial", "license_unknown", null]},
         "primary_for": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/task"}, "description": "Tarefas para as quais este é a recomendação principal, decidido pelo solver. Candidato blocked tem sempre []."},
@@ -230,7 +234,7 @@
       "required": ["code", "severity", "message"],
       "additionalProperties": false,
       "properties": {
-        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool", "quality_preference"]},
+        "code": {"enum": ["on_battery", "hdd_storage", "swap_not_a_fix", "multi_gpu_ignored", "hardware_field_missing", "bandwidth_estimated", "vram_usable_clamped", "catalog_stale", "unified_memory_single_pool", "quality_preference", "slow_prefill_cpu"]},
         "severity": {"enum": ["info", "warn"]},
         "message": {"type": "string", "minLength": 1},
         "field": {"type": "string", "description": "Caminho JSON do campo relacionado, ex. 'memory.speed_mts'."}

@@ -2,5 +2,12 @@
   "eta_gpu": 0.75,
   "eta_cpu": 0.60,
   "max_bpw_offload": 8.5,
+  "prefill_reference": {
+    "tokens_per_s": 11.7,
+    "measured_on": "AMD Ryzen 5 7520U, 4 núcleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens",
+    "tool": "ollama 0.17.6 API",
+    "date": "2026-11-15",
+    "power": "AC, performance"
+  },
   "source": "default"
 }

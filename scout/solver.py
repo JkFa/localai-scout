@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from scout import __version__
@@ -29,6 +29,12 @@ QUALITY_PREF_MAX_PARAMS = 7_000_000_000
 QUALITY_PREF_LOW_BPW = 5.5
 QUALITY_PREF_HIGH_BPW = 6.5
 PROVENANCE_RANK: dict[str, int] = {"catalog": 0, "measured": 0, "calculated": 1, "estimated": 2}
+
+DECODE_NA_MESSAGE = (
+    "Embeddings não geram texto token a token: tokens/s de decode não se aplica. "
+    "A métrica aplicável é o throughput de prefill (tokens processados por segundo), "
+    "ainda não estimado."
+)
 
 SWAP_MESSAGE = (
     "Aumentar swap não faz modelo maior rodar: pesos paginados para disco derrubam a "
@@ -488,6 +494,10 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
         hybrid_blocked = (max_bpw_offload is not None and bpw > max_bpw_offload
                           and q["format"] == "GGUF" and "gpu" in pools and "cpu" in pools)
         attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools)
+        if embed_only:
+            # Embeddings não fazem decode: tokens/s por banda não se aplica. Sem
+            # tokens/s, placement e ordem saem pelo desempate por bytes (F4).
+            attempts = [replace(a, tps=None) for a in attempts]
         # R3: o limiar nunca é silencioso. O híbrido é calculado só para saber se
         # o limiar descartou algo que caberia; ele não entra na escolha.
         offload_dropped = False
@@ -501,10 +511,13 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
             if offload_dropped:
                 dropped_quants.append(q["name"])
             cand = _candidate(ref, m, q, chosen, weights, kv, buf, fallback, skipped,
-                              intent, tuning_default, n_threads)
-            if dropped_quants:
-                cand["notes"] = [_offload_note(name, q, chosen, n_layers, max_bpw_offload)
-                                 for name in dropped_quants]
+                              intent, tuning_default, n_threads, decode_applies=not embed_only)
+            notes = [_offload_note(name, q, chosen, n_layers, max_bpw_offload)
+                     for name in dropped_quants]
+            if embed_only:
+                notes.append({"code": "decode_not_applicable", "message": DECODE_NA_MESSAGE})
+            if notes:
+                cand["notes"] = notes
             if embed_only:
                 cand["ctx_effective"] = ctx
             cand["_rank"] = (chosen.bytes_cpu_per_token, chosen.bytes_per_token)
@@ -545,22 +558,26 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
 
 def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, buf: int,
                fallback: bool, skipped: list, intent: Intent, tuning_default: bool,
-               n_threads: int | None) -> dict[str, Any]:
+               n_threads: int | None, decode_applies: bool = True) -> dict[str, Any]:
     reasons: set[str] = {"ttft_unspecified"}
     if fallback:
         reasons.add("weights_fallback")
         if q.get("bpw_source") == "table":
             reasons.add("bpw_from_table")
-    if tuning_default:
-        reasons.add("eta_default")
-    if a.tps is None:
-        reasons.add("bandwidth_unknown")
-        reasons.add("ranked_by_bytes")
-    # Banda só conta se o pool tem camadas neste placement.
-    bw_pools = [p for p in a.pools_used
-                if (p.id == "cpu" and a.n_gpu < m["n_layers"]) or (p.id != "cpu" and a.n_gpu > 0)]
-    if any(p.bw_estimated for p in bw_pools):
-        reasons.add("bandwidth_estimated")
+    if not decode_applies:
+        # Sem decode, eta e banda não entram em número nenhum deste candidato.
+        reasons.add("decode_not_applicable")
+    else:
+        if tuning_default:
+            reasons.add("eta_default")
+        if a.tps is None:
+            reasons.add("bandwidth_unknown")
+            reasons.add("ranked_by_bytes")
+        # Banda só conta se o pool tem camadas neste placement.
+        bw_pools = [p for p in a.pools_used
+                    if (p.id == "cpu" and a.n_gpu < m["n_layers"]) or (p.id != "cpu" and a.n_gpu > 0)]
+        if any(p.bw_estimated for p in bw_pools):
+            reasons.add("bandwidth_estimated")
     low_hw = any(p.low_confidence for p in a.pools_used)
     if low_hw:
         reasons.add("hardware_low_confidence")
@@ -648,6 +665,47 @@ def _assign_primary(candidates: list[dict], tasks: tuple[str, ...]) -> list[dict
     return warnings
 
 
+def _round_sig2(x: float) -> int:
+    """Arredonda para 2 algarismos significativos: 702 -> 700, 1404 -> 1400."""
+    if x < 1:
+        return 0
+    mag = 10 ** max(0, len(str(int(x))) - 2)
+    return int(round(x / mag) * mag)
+
+
+def _cpu_majority(c: dict) -> bool:
+    """cpu_only, ou híbrido com mais camadas na CPU que na GPU."""
+    n_layers = c["model"]["n_layers"]
+    return c["placement"] == "cpu_only" or (
+        c["placement"] == "hybrid" and n_layers - c["n_gpu_layers"] > c["n_gpu_layers"])
+
+
+def _slow_prefill_warning(candidates: list[dict], ref: dict | None) -> dict[str, Any] | None:
+    """Aviso slow_prefill_cpu: prompt processado na CPU é lento.
+
+    A ordem de grandeza vem de uma MEDIÇÃO registrada em tuning
+    (prefill_reference), nunca de estimativa nem de literal no código.
+    Candidatos só de embeddings não contam: a referência é de um LLM.
+    """
+    hit = [c["model"]["id"] for c in candidates
+           if _cpu_majority(c) and "decode_not_applicable" not in c["confidence_reasons"]]
+    if not hit:
+        return None
+    msg = (f"Processar o prompt na CPU é lento ({len(hit)} candidato(s) com a maioria das "
+           f"camadas na CPU: {', '.join(hit)}).")
+    tps = (ref or {}).get("tokens_per_s")
+    if isinstance(tps, (int, float)) and not isinstance(tps, bool) and tps > 0:
+        msg += (f" Medição de referência: ~{round(tps)} tokens/s de prefill em "
+                f"{ref.get('measured_on', 'máquina não informada')} "
+                f"({ref.get('tool', 'ferramenta não informada')}, {ref.get('date', 'sem data')}); "
+                f"nesse ritmo, um prompt de {_round_sig2(tps * 60)} tokens leva perto de um minuto. "
+                "Outra máquina ou outro modelo mudam esse número; o tempo até o primeiro token "
+                "não é estimado.")
+    else:
+        msg += " Sem medição de referência em tuning; o tempo até o primeiro token não é estimado."
+    return _warning("slow_prefill_cpu", "warn", msg)
+
+
 def _sort_key(c: dict) -> tuple:
     """(tier, tokens/s desc com null por último, bytes da RAM por token, bytes por
     token, model_id). Os bytes só desempatam de fato entre tokens/s null (F4)."""
@@ -702,6 +760,9 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
 
     candidates.sort(key=_sort_key)
     warnings += _assign_primary(candidates, tasks)
+    slow = _slow_prefill_warning(candidates, tuning.get("prefill_reference"))
+    if slow is not None:
+        warnings.append(slow)
     for c in candidates:
         del c["_rank"]  # critério interno de ordem, não vai para a saída
 
@@ -730,6 +791,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
                 "source": tuning.get("source", "default"),
                 **({"max_bpw_offload": tuning["max_bpw_offload"]}
                    if tuning.get("max_bpw_offload") is not None else {}),
+                **({"prefill_reference": tuning["prefill_reference"]}
+                   if isinstance(tuning.get("prefill_reference"), dict) else {}),
             },
         },
         "pools": [p.to_json() for p in pool_list],
