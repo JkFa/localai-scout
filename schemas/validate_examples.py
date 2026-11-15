@@ -46,10 +46,15 @@ def set_path(doc: dict, path: list, value) -> dict:
 
 
 sysx, catx, feax = load("system_rtx3060.json"), load("catalog_example.json"), load("feasibility_example.json")
+calx = load("calibration_example.json")
 POSITIVE = [("system.schema.json", "system_rtx3060.json", sysx),
             ("catalog.schema.json", "catalog_example.json", catx),
             ("feasibility.schema.json", "feasibility_example.json", feax),
-            ("error.schema.json", "erro inline", {"error": {"code": "unauthorized", "message": "token ausente"}})]
+            ("error.schema.json", "erro inline", {"error": {"code": "unauthorized", "message": "token ausente"}}),
+            ("calibration.schema.json", "calibration_example.json", calx),
+            ("calibration.schema.json", "desktop: energia não aplicável, kernel null",
+             set_path(set_path(calx, ["pools", "cpu", 0, "power"], {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}),
+                      ["machine", "os.kernel"], None))]
 RAM = ["memory", "ram_total_bytes", "value"]
 NEGATIVE = [
     ("system.schema.json", "ram_total como float", set_path(sysx, RAM, 17179869184.5)),
@@ -63,6 +68,20 @@ NEGATIVE = [
     ("feasibility.schema.json", "kv_bytes float", set_path(feax, ["candidates", 0, "kv_bytes"], 1.5e9 + 0.5)),
     ("feasibility.schema.json", "system embutido inválido", set_path(feax, ["inputs", "system", "kind"], "catalog")),
     ("error.schema.json", "código fora do enum", {"error": {"code": "oops", "message": "x"}}),
+    ("calibration.schema.json", "calibração sem identidade", {k: v for k, v in calx.items() if k != "machine"}),
+    ("calibration.schema.json", "sem calibration_schema_version",
+     {k: v for k, v in calx.items() if k != "calibration_schema_version"}),
+    ("calibration.schema.json", "identidade com hostname", set_path(calx, ["machine", "hostname"], "maquina")),
+    ("calibration.schema.json", "camada 1 null (cpu.model)", set_path(calx, ["machine", "cpu.model"], None)),
+    ("calibration.schema.json", "não aplicável com valor",
+     set_path(calx, ["pools", "cpu", 0, "power", "not_applicable"], ["on_ac"])),
+    ("calibration.schema.json", "power sem not_applicable",
+     set_path(calx, ["pools", "cpu", 0, "power"], {"on_ac": True, "profile": "performance"})),
+    ("calibration.schema.json", "pool gpu sem gpu.name",
+     set_path(set_path(calx, ["pools", "gpu"], calx["pools"]["cpu"]), ["machine", "gpu.name"], None)),
+    ("calibration.schema.json", "pool como objeto, não lista", set_path(calx, ["pools", "cpu"], calx["pools"]["cpu"][0])),
+    ("calibration.schema.json", "ferramentas misturadas", set_path(calx, ["pools", "cpu", 0, "tool"], "llama-bench+ollama")),
+    ("calibration.schema.json", "ram_total como float", set_path(calx, ["machine", "memory.ram_total_bytes"], 7.5e9 + 0.5)),
 ]
 
 failed = 0

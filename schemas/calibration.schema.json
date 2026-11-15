@@ -1,0 +1,691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/localai-scout/schemas/calibration.schema.json",
+  "title": "LocalAI Scout — calibração local da máquina (calibration.json)",
+  "description": "Arquivo LOCAL, fora do git, gravado só por `scout bench --run` (schemas/calibration_store_spec.md). Uma identidade de máquina por arquivo; por pool, uma lista de entradas, no máximo uma por estado de energia. Proibido por desenho (additionalProperties false): hostname, usuário, números de série, MAC, caminhos. $defs/echo é o formato de inputs.calibration no feasibility.json.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "scout_version",
+    "calibration_schema_version",
+    "machine",
+    "pools"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Formato do arquivo. Diferente do suportado -> plan falha alto."
+    },
+    "kind": {
+      "const": "calibration"
+    },
+    "scout_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+",
+      "description": "Só informativo; nunca comparado."
+    },
+    "calibration_schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "SIGNIFICADO dos números gravados (ex.: como bytes_per_token é calculado). Diferente da constante do scout -> todos os pools descartados (calibration_schema_outdated)."
+    },
+    "machine": {
+      "$ref": "#/$defs/machine"
+    },
+    "pools": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/pool_id"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/$defs/pool_calibration"
+        },
+        "description": "Uma entrada por estado de energia (power.on_ac, power.profile, power.not_applicable). Unicidade garantida pelo código."
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "Calibração do pool gpu exige a identidade da GPU completa.",
+      "if": {
+        "properties": {
+          "pools": {
+            "required": [
+              "gpu"
+            ]
+          }
+        },
+        "required": [
+          "pools"
+        ]
+      },
+      "then": {
+        "properties": {
+          "machine": {
+            "properties": {
+              "gpu.name": {
+                "type": "string"
+              },
+              "gpu.vram_total_bytes": {
+                "type": "integer"
+              },
+              "gpu.backend": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "pool_id": {
+      "enum": [
+        "gpu",
+        "cpu",
+        "unified"
+      ]
+    },
+    "power": {
+      "type": "object",
+      "description": "Estado de energia. Três tipos de valor: conhecido; null FORA de not_applicable = desconhecido (não lido); null DENTRO de not_applicable = não aplicável (a dimensão não existe nesta máquina, ex.: sem bateria). Não aplicável não decide nem limita confiança (calibration_store_spec.md §4).",
+      "required": [
+        "on_ac",
+        "profile",
+        "not_applicable"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "on_ac": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "profile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "not_applicable": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "on_ac",
+              "profile"
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "not_applicable": {
+                "contains": {
+                  "const": "on_ac"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "on_ac": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "not_applicable": {
+                "contains": {
+                  "const": "profile"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "profile": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "match_field": {
+      "enum": [
+        "platform",
+        "os.arch",
+        "os.kernel",
+        "cpu.model",
+        "cpu.cores_physical",
+        "memory.ram_total_bytes",
+        "gpu.name",
+        "gpu.backend",
+        "gpu.vram_total_bytes",
+        "memory.speed_mts",
+        "memory.channels"
+      ]
+    },
+    "machine": {
+      "type": "object",
+      "description": "Identidade legível, copiada do system.json usado pelo bench (valor de cada Field). Chave = caminho no system.json sem '.value'; gpu.* = GPU escolhida pelo solver para o pool gpu, null se não há pool gpu. Camada 1 (hardware, decide; null proibido nos campos de escopo all): platform, os.arch, cpu.model, cpu.cores_physical, memory.ram_total_bytes, gpu.*. Camada 2 (corrobora; null = desconhecido): memory.speed_mts, memory.channels. Pilha de software (modula, nunca descarta): os.kernel.",
+      "required": [
+        "platform",
+        "os.arch",
+        "os.kernel",
+        "cpu.model",
+        "cpu.cores_physical",
+        "memory.ram_total_bytes",
+        "gpu.name",
+        "gpu.backend",
+        "gpu.vram_total_bytes",
+        "memory.speed_mts",
+        "memory.channels"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "enum": [
+            "linux",
+            "darwin",
+            "windows",
+            "other"
+          ]
+        },
+        "os.arch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "os.kernel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Pilha de software: gravado, não decide. Comparado por major.minor (kernel_key); diferente rebaixa um nível, null limita a medium."
+        },
+        "cpu.model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu.cores_physical": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory.ram_total_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gpu.name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "gpu.backend": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "gpu.vram_total_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "memory.speed_mts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "memory.channels": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "pool_calibration": {
+      "type": "object",
+      "description": "Uma medição de um pool num estado de energia (schemas/bench_spec.md). Uma ferramenta só por entrada.",
+      "required": [
+        "bandwidth_bytes_per_s",
+        "overhead_s_per_token",
+        "form",
+        "stable",
+        "power",
+        "tool",
+        "tool_version",
+        "models",
+        "date",
+        "prefill_tokens_per_s"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "bandwidth_bytes_per_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "overhead_s_per_token": {
+          "type": "number",
+          "minimum": 0
+        },
+        "form": {
+          "enum": [
+            "1p",
+            "2p"
+          ]
+        },
+        "stable": {
+          "type": "boolean"
+        },
+        "power": {
+          "$ref": "#/$defs/power"
+        },
+        "tool": {
+          "enum": [
+            "ollama",
+            "llama-bench"
+          ]
+        },
+        "tool_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Lida por engine_version(tool), a MESMA função que o plan usa para a versão atual. null = não lida."
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "architecture",
+              "bytes"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "architecture": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "prefill_tokens_per_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "prefill_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fit": {
+          "type": "object"
+        }
+      }
+    },
+    "echo": {
+      "type": "object",
+      "description": "inputs.calibration do feasibility.json. Nunca contém caminho de arquivo (revela o usuário); só a origem.",
+      "required": [
+        "origin",
+        "status",
+        "calibration_schema_version",
+        "store",
+        "match",
+        "pools"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "flag",
+            "env",
+            "default",
+            "disabled"
+          ]
+        },
+        "status": {
+          "enum": [
+            "disabled",
+            "absent",
+            "used",
+            "discarded"
+          ],
+          "description": "absent = nenhum arquivo no caminho resolvido; used = ao menos um pool aplicado; discarded = arquivo lido e nenhum pool aplicado."
+        },
+        "calibration_schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Versão que este scout espera."
+        },
+        "store": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "scout_version",
+                "calibration_schema_version",
+                "machine"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "scout_version": {
+                  "type": "string"
+                },
+                "calibration_schema_version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "machine": {
+                  "$ref": "#/$defs/machine"
+                }
+              }
+            }
+          ]
+        },
+        "match": {
+          "type": "array",
+          "description": "Uma entrada por campo de identidade, na ordem de $defs/match_field.",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "layer",
+              "scope",
+              "stored",
+              "current",
+              "result",
+              "effect"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "$ref": "#/$defs/match_field"
+              },
+              "layer": {
+                "enum": [
+                  1,
+                  2,
+                  "software"
+                ]
+              },
+              "scope": {
+                "enum": [
+                  "all",
+                  "cpu",
+                  "gpu"
+                ]
+              },
+              "stored": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "current": {
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "result": {
+                "enum": [
+                  "equal",
+                  "different",
+                  "unknown"
+                ]
+              },
+              "effect": {
+                "enum": [
+                  "none",
+                  "discard",
+                  "cap_medium",
+                  "downgrade"
+                ]
+              }
+            }
+          }
+        },
+        "pools": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/pool_id"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "status",
+              "reasons",
+              "power_match",
+              "available_power",
+              "engine",
+              "calibration"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "applied",
+                  "discarded",
+                  "pool_absent"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "calibration_machine_mismatch",
+                    "calibration_machine_unknown",
+                    "calibration_memory_unverified",
+                    "calibration_schema_outdated",
+                    "calibration_pool_absent",
+                    "calibration_engine_changed",
+                    "calibration_engine_unknown",
+                    "calibration_power_mismatch",
+                    "calibration_power_unknown",
+                    "calibration_kernel_changed",
+                    "calibration_kernel_unknown"
+                  ]
+                }
+              },
+              "power_match": {
+                "enum": [
+                  "same",
+                  "other_state",
+                  "unknown"
+                ],
+                "description": "same = entrada com os dois atributos iguais (não aplicável × não aplicável conta como igual); other_state = nenhuma casa, usada a de MENOR banda, um nível abaixo; unknown = atributo atual desconhecido, usada a de menor banda compatível, limitada a medium."
+              },
+              "available_power": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/power"
+                }
+              },
+              "engine": {
+                "type": "object",
+                "required": [
+                  "tool",
+                  "stored_version",
+                  "current_version",
+                  "result"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "tool": {
+                    "enum": [
+                      "ollama",
+                      "llama-bench"
+                    ]
+                  },
+                  "stored_version": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "current_version": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "result": {
+                    "enum": [
+                      "equal",
+                      "different",
+                      "unknown"
+                    ]
+                  }
+                }
+              },
+              "calibration": {
+                "$ref": "#/$defs/pool_calibration",
+                "description": "Entrada escolhida pela regra de energia (§4): casamento exato; senão a de menor banda."
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "disabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "origin": {
+                "const": "disabled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "origin": {
+                "const": "disabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "const": "disabled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "disabled",
+                  "absent"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "store": {
+                "type": "null"
+              },
+              "match": {
+                "maxItems": 0
+              },
+              "pools": {
+                "maxProperties": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "used",
+                  "discarded"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "store": {
+                "type": "object"
+              },
+              "match": {
+                "minItems": 1
+              },
+              "pools": {
+                "minProperties": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

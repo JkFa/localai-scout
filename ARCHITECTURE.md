@@ -50,6 +50,26 @@ completo da máquina. Portanto:
   antes de qualquer trabalho
 - Sem persistência: o servidor não grava nada em disco além de logs opcionais
 
+### Calibração local
+
+A calibração de `scout bench --run` é dado DESTA máquina e não vai para o
+repositório: fica em `calibration.json` no diretório de estado do usuário
+(`$XDG_STATE_HOME/localai-scout/`, `~/Library/Application Support/localai-scout/`,
+`%LOCALAPPDATA%\localai-scout\`), sobrescrevível por `SCOUT_CALIBRATION` ou
+`--calibration`. Carrega uma identidade legível de hardware (camada 1, que decide:
+CPU, núcleos, RAM, SO, arquitetura, GPU; camada 2, que corrobora: MT/s e
+canais; nunca hostname, serial, MAC ou caminho) e só é aplicada a um system.json
+que casa com ela. A pilha de software (kernel por major.minor e versão do motor)
+nunca descarta a calibração: só rebaixa a confiança e sugere recalibrar. Cada
+pool guarda uma entrada por estado de energia; sem casamento exato, o plan usa a
+menor medição da máquina e diz a condição por extenso. O eta global só entra
+quando não há medição que valha. Ausência tem dois tipos: desconhecido (limita a
+confiança a medium) e não aplicável (não limita). A CLI lê a energia e a versão
+do motor (loopback); o solver só compara. `scout serve` lê o arquivo na
+inicialização e nunca o grava. O feasibility.json ecoa em `inputs.calibration` o que foi
+usado ou descartado, sem o caminho. `data/tuning.json` guarda só constantes do
+projeto. Enunciado: `schemas/calibration_store_spec.md`.
+
 ### CORS e Private Network Access
 
 Dois pontos que vão custar uma tarde se não estiverem no código desde o início:

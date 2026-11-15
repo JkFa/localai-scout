@@ -694,3 +694,67 @@ campo). A única rede do bench é a API local do Ollama em 127.0.0.1; `hf.py` co
 O bench grava `general.architecture` do GGUF/Ollama ("qwen3moe") e o HF usa
 `model_type` ("qwen3_moe"): a comparação é feita em minúsculas, sem "_" e
 "-". Arquitetura null em qualquer lado = diferente (não sobe para high).
+
+## 2026-11-15 — calibração local com identidade da máquina, fora do git (Tarefa 5)
+
+**Contexto.** `scout bench --run` gravava `calibration.<pool>` em `data/tuning.json`, que é versionado. O bloco não
+tinha identidade, e o solver o aplicava a qualquer system.json. Commitado, ele daria a todo usuário a banda do Ryzen 5
+7520U do autor (21,3 GB/s) com `high`. Regravar também reserializava o arquivo inteiro.
+**Decisão (arquiteto em duas rodadas; respostas do humano a P1, P2, PE, PE.1 e PK; rev. 3 fechada pela sessão
+principal; `schemas/calibration_store_spec.md`, `calibration.schema.json`).**
+- `data/tuning.json` guarda só constantes e nunca é gravado. A calibração vai para `calibration.json` local, no
+  diretório de estado do usuário: `$XDG_STATE_HOME` ou `~/.local/state`, `~/Library/Application Support`,
+  `%LOCALAPPDATA%`. Precedência: `--calibration` > `SCOUT_CALIBRATION` > padrão. `--no-calibration` desliga a leitura.
+  STATE e Local, e não CONFIG nem Roaming, porque o dado não é portável e esses diretórios são sincronizados.
+- Identidade de HARDWARE decide; PILHA DE SOFTWARE só modula a confiança.
+  - Camada 1 (decide; diferiu ou null → descarta): cpu.model, cpu.cores_physical, memory.ram_total_bytes (±5%),
+    platform e os.arch, mais gpu.name, gpu.backend e gpu.vram_total_bytes (±5%), estes só para o pool gpu.
+  - Camada 2 (corrobora; só pool cpu): MT/s e canais. Conhecidos e diferentes → descarta. Desconhecidos = sem
+    evidência → medium, com aviso que explica como liberar `high` (dmidecode legível).
+  - Pilha de software: kernel por `major.minor` e versão do motor (lida pela mesma `engine_version()` no bench e no
+    plan; a CLI lê em loopback, o solver compara). Diferente → um nível abaixo, com sugestão de recalibrar. Não lido
+    → medium. Nunca descarta: invalidar por kernel ou motor força um bench que a maioria não roda, e o usuário cai
+    no eta.
+  - `memory.unified` não entra: é redundante com o id do pool.
+- `calibration_schema_version` (significado dos números): diferente → descarta. `scout_version` nunca é comparado.
+- Energia (PE): uma entrada por estado em cada pool. Casamento exato primeiro; sem ele, a MENOR medição do pool, um
+  nível abaixo, com a condição por extenso ("calibrado na tomada, você está na bateria"). O critério é a direção do
+  erro, não o tamanho: superestimar custa o download e a credibilidade; subestimar custa, no pior caso, pular um
+  modelo que daria certo. Nenhuma medição desta máquina perde para o eta global, que só entra quando o pool não tem
+  medição que valha.
+- Dois tipos de ausência (PE.1): desconhecido (existe e não foi lido → não decide, limita a medium) e não aplicável
+  (não existe nesta classe de máquina → não decide e não limita). `power` ganha `not_applicable`. No linux, sem
+  `BAT*` → `on_ac` não se aplica; sem `platform_profile` e sem `powerprofilesctl` → `profile` não se aplica. O
+  desktop chega a `high` sem regra especial. Plataforma em que o coletor ainda não lê o atributo é desconhecido, não
+  "não aplicável".
+- O feasibility.json ganha `inputs.calibration` obrigatório (origem, status, casamento campo a campo, motor, energia,
+  entrada usada), sem caminho. Sai `inputs.tuning.calibration`; `schema_version` fica 1 (o eco antigo nunca foi
+  publicado).
+- O bench recusa antes de medir se a identidade de hardware estiver incompleta, se o system.json não for desta
+  máquina ou se o ajuste misturar ferramentas. A escrita é atômica e determinística. Tuning com `calibration` → o
+  plan falha alto.
+- O exemplo do schema e as fixtures de calibração usam máquina fictícia e números redondos. Medição real fica só
+  aqui, como evidência: exemplo carrega impressão digital de hardware e número real em exemplo vira semente.
+**Evidência (mesma máquina, Qwen3-4B Q4_K_M, banda teórica 44 GB/s, eta daria 26,4 GB/s).** Bateria: 11,1 GB/s.
+Tomada/performance: 19,8 GB/s à mão e 21,3 GB/s pelo bench (8,52 tok/s). Com swap ativo e 316 MB disponíveis, o
+bench mediu 15,0 GB/s e marcou `stable`: pressão de memória ainda não é conferida (tarefa futura do `coletor`).
+**Alternativas descartadas.**
+1. Pôr `data/tuning.json` no .gitignore: perde as constantes versionadas.
+2. Arquivo dentro do checkout: não existe numa instalação via pip.
+3. Hash opaco: não explica por que a calibração caiu.
+4. Migrar preenchendo a identidade com o sistema atual: inventa dado (regra 3).
+5. Toda divergência só rebaixar: banda de outra RAM é um número errado, não um número incerto.
+6. Comparar `scout_version`: obrigaria recalibrar a cada release, sem que os números tenham mudado de significado.
+7. Expirar por idade: exige relógio no solver e quebra a reprodutibilidade (descartada pelo humano).
+8. Kernel exato na camada 1: derruba a calibração a cada atualização do Ubuntu, quase semanal.
+9. Sem medição no estado de energia atual, voltar ao eta: erra +138% na bateria desta máquina, e para cima.
+10. Regra especial "profile null dos dois lados = igual": resolvida pela distinção desconhecido × não aplicável.
+**Consequência aceita.**
+- Trocar CPU, RAM, GPU ou reserva da iGPU invalida a calibração até um novo bench.
+- Sem dmidecode legível, o pool cpu não passa de medium, e a saída diz como resolver.
+- Com o motor parado no momento do plan, a calibração não passa de medium, e a saída do plan passa a depender do
+  motor estar de pé.
+- Fora do estado de energia medido, o plan subestima de propósito (na tomada desta máquina, −44% se só houver a
+  medição da bateria).
+- O pool gpu não confere a configuração de RAM, nem numa iGPU.
+- Um bench rodado durante o `serve` só vale depois de reiniciá-lo.

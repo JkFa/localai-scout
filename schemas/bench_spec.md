@@ -47,6 +47,13 @@ primeira calibração e NÃO é alterado com base em nenhuma máquina.
 
 ## Ajuste e gravação da calibração (`coletor`)
 
+> Substituído em parte pela Tarefa 5 (`schemas/calibration_store_spec.md`):
+> a calibração não vai mais para `data/tuning.json`, e sim para o arquivo
+> local `calibration.json`, com identidade da máquina, versão do motor e uma
+> entrada por estado de energia. O plan só a aplica a um system.json que case
+> com essa identidade. As regras de energia do "Consumo no plan" passam a ser
+> as do §4 daquele enunciado.
+
 - Com ≥ 2 modelos medidos no MESMO pool e tamanhos diferentes: mínimos
   quadrados em `t = bytes/banda + overhead`. Se `overhead` < 5% do tempo por
   token do menor modelo, ou negativo, descarta-o e refaz com um parâmetro
