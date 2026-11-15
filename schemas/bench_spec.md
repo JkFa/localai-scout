@@ -29,7 +29,8 @@ primeira calibração e NÃO é alterado com base em nenhuma máquina.
   `file_bytes` do catálogo (diferença ≤ 1 MiB); se não casar, recusa com
   motivo e não mede.
 - Prompt canônico versionado no repositório (arquivo único, sempre o mesmo),
-  com contagem de tokens registrada no resultado. Geração de 128 tokens,
+  com contagem de tokens registrada no resultado. Geração de 1024 tokens (rodada com menos de 768 é
+  recusada; ver DECISIONS.md, 2026-11-15: decode cai ao longo da resposta),
   temperatura 0, semente fixa; prompt com prefixo variável por rodada para
   não acertar cache de prompt.
 - Estabilização: 1 aquecimento descartado; rodadas até as duas últimas

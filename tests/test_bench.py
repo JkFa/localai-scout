@@ -141,7 +141,7 @@ class FakeOllama:
         i = len(self.generated) - 1
         tps = self.decode[min(i, len(self.decode) - 1)]
         pre = self.prefill[min(i, len(self.prefill) - 1)] if self.prefill else 12.0
-        return {"eval_count": 128, "eval_duration": int(128 / tps * 1e9),
+        return {"eval_count": B.GEN_TOKENS, "eval_duration": int(B.GEN_TOKENS / tps * 1e9),
                 "prompt_eval_count": 532, "prompt_eval_duration": int(532 / pre * 1e9)}
 
 
@@ -153,11 +153,11 @@ def test_ollama_measure_end_to_end(monkeypatch, fixed_env):
     assert r["tool"] == "ollama" and r["tool_version"] == "9.9.9" and r["architecture"] == "qwen3"
     assert r["stable"] is True and len(r["rounds"]) == 4
     assert r["effective_bandwidth_bytes_per_s"] == round(t.bytes_per_token * r["decode_tps"])
-    assert r["prompt_tokens"] == 532 and r["gen_tokens"] == 128 and r["power"] == AC
-    # parâmetros da medição: temperatura 0, semente fixa, 128 tokens, threads de performance, prefixo por rodada
+    assert r["prompt_tokens"] == 532 and r["gen_tokens"] == B.GEN_TOKENS and r["power"] == AC
+    # parâmetros da medição: temperatura 0, semente fixa, GEN_TOKENS tokens, threads de performance, prefixo por rodada
     g = fake.generated
     assert all(b["options"]["temperature"] == 0 and b["options"]["seed"] == B.SEED
-               and b["options"]["num_predict"] == 128 and b["options"]["num_thread"] == 16
+               and b["options"]["num_predict"] == B.GEN_TOKENS and b["options"]["num_thread"] == 16
                and b["options"]["num_gpu"] == 0 and b["options"]["num_ctx"] == 8192 for b in g)
     assert len({b["prompt"][:12] for b in g}) == len(g)  # prefixo diferente em toda rodada (sem cache de prompt)
 
@@ -202,7 +202,7 @@ def test_ollama_unreachable(monkeypatch):
 # ---- llama-bench simulado
 
 LB = json.dumps([{"build_commit": "abc123", "build_number": 42, "n_prompt": 512, "n_gen": 0, "avg_ts": 40.5},
-                 {"build_commit": "abc123", "build_number": 42, "n_prompt": 0, "n_gen": 128, "avg_ts": 6.25}])
+                 {"build_commit": "abc123", "build_number": 42, "n_prompt": 0, "n_gen": B.GEN_TOKENS, "avg_ts": 6.25}])
 
 
 def test_parse_llama_bench():
@@ -237,7 +237,7 @@ def test_llama_bench_measure_uses_plan_parameters(monkeypatch, fixed_env):
     r = B.measure_model(t, "llama-bench", "/x/m.gguf", None, AC)
     assert r["tool"] == "llama-bench" and r["tool_version"] == "b9999" and r["stable"] is True
     c = cmds[0]
-    assert c[c.index("-ngl") + 1] == "0" and c[c.index("-t") + 1] == "16" and c[c.index("-n") + 1] == "128"
+    assert c[c.index("-ngl") + 1] == "0" and c[c.index("-t") + 1] == "16" and c[c.index("-n") + 1] == str(B.GEN_TOKENS)
     assert r["decode_tps"] == 6.25 and r["prompt_tokens"] == 512
 
 
@@ -553,3 +553,17 @@ def test_cli_run_records_live_kernel_not_system_file_kernel(monkeypatch, tmp_pat
     entry = json.loads(cal.read_text())["pools"]["cpu"][0]
     assert entry["measured_with"]["os.kernel"] == "6.97.0-9-fixture-ao-vivo"
     assert "6.97.0-9-fixture-ao-vivo" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("count,ok", [(B.MIN_GEN_TOKENS - 1, False), (B.MIN_GEN_TOKENS, True), (B.GEN_TOKENS, True)])
+def test_ollama_generation_must_reach_three_quarters_of_gen_tokens(monkeypatch, count, ok):
+    """Resposta que para cedo mede o decode noutra posição da resposta (DECISIONS.md, 2026-11-15)."""
+    def fake(method, path, body=None, timeout=600.0):
+        return {"eval_count": count, "eval_duration": 10**9, "prompt_eval_count": 5, "prompt_eval_duration": 10**9}
+    monkeypatch.setattr(B, "_ollama_request", fake)
+    assert B.MIN_GEN_TOKENS * 4 == B.GEN_TOKENS * 3
+    if ok:
+        assert B.ollama_round("x", target(), "p", 1).decode_tps == pytest.approx(count)
+    else:
+        with pytest.raises(B.BenchError):
+            B.ollama_round("x", target(), "p", 1)

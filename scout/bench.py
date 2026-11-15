@@ -28,14 +28,14 @@ from scout.solver import TASKS, Intent, solve
 ROOT = Path(__file__).resolve().parent.parent
 PROMPT_PATH = ROOT / "prompts" / "bench_prompt.txt"
 OLLAMA_URL = "http://127.0.0.1:11434"
-GEN_TOKENS = 128
+GEN_TOKENS = 1024  # resposta de tamanho real: o decode cai ao longo da resposta (DECISIONS.md, 2026-11-15)
 PREFILL_TOKENS = 512  # llama-bench -p
 SEED = 42
 TOL = 0.05
 MAX_ROUNDS = 6
 OVERHEAD_MIN_SHARE = 0.05
 MIB = 1024 * 1024
-MIN_GEN_TOKENS = 16
+MIN_GEN_TOKENS = 768  # 75% de GEN_TOKENS: menos que isso e a média fica de outra posição da resposta
 
 
 class BenchError(Exception):

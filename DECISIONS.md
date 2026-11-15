@@ -820,3 +820,40 @@ condições, e a causa não pode ser recuperada; a suspeita mais forte é press�
   correspondência de energia: kernel e camada 2 não modulam um pool que caiu no eta.
 - C. O aviso `slow_prefill_cpu` usa o menor prefill elegível fora do casamento exato de energia, como o TTFT.
 - D. O bench grava em `measured_with.os.kernel` o kernel lido ao vivo, não o do `--system`, e avisa se diferem.
+
+## 2026-11-15 — ajuste de dois parâmetros adiado: falta modelo pequeno no catálogo
+
+**Decisão (humano).** A calibração desta máquina sai na forma de um parâmetro (banda efetiva, sem overhead), medida
+só com o Qwen3-4B Q4_K_M. O segundo caso de sempre, Qwen3.5 0.8B Q8_0 (`qwen3.5:0.8b` no Ollama), não está em
+`data/catalog.json`, e o bench só aceita ids do catálogo (regra 2). O bloqueio é uma entrada de catálogo, não uma
+limitação de desenho: com dois tamanhos, o ajuste `t = bytes/banda + overhead` separa o custo fixo por token e a
+calibração melhora de verdade.
+**Acompanhamento (aberto).** Incluir um modelo pequeno no catálogo com `scout catalog add` (consulta o Hugging Face,
+altera `data/catalog.json`; commit próprio, fora da Tarefa 5) e refazer o bench com os dois modelos.
+
+## 2026-11-15 — o tier "limite" previu a recusa de carga do Ollama
+
+**Achado.** O plan classificou o Qwen3-4B Q4_K_M (ctx 8192) como tier `limite` nesta máquina (7,0 GiB de RAM). Às
+14:23, com o swap desligado e 2,4 GiB livres, o Ollama recusou a carga ("model requires more system memory (3.8 GiB)
+than is available (2.4 GiB)"); às 19:31, com 4,0 GiB livres, carregou mas empurrou ~700 MB de outros processos para
+o swap. O rótulo previu, na prática, que o modelo cabe só com folga apertada e falha quando as condições apertam.
+**Por que registrar.** É evidência de que a faixa de tier significa alguma coisa fora da aritmética, e nenhum teste
+cobre isso: os testes provam que o solver calcula o tier, não que o tier corresponde ao comportamento real.
+
+## 2026-11-15 — o bench mede resposta de tamanho real (1024 tokens), não o começo da geração
+
+**Contexto.** A verificação cruzada contra a medição manual (7,94 tok/s com `ollama run --verbose`, contexto padrão)
+deu +25% no bench (9,95). Não era bug na aritmética: mesma máquina, mesmo Ollama, swap parado, tomada/performance.
+**Evidência (mesmo prompt, modelo já carregado com ctx 4096).** `ollama run` com resposta longa: 8,34 e 8,19 tok/s
+(1477 e 1551 tokens gerados), a 3–5% da medição manual. Pela API, gerando 128 tokens: 10,96 e 10,88 tok/s. O bench
+(prompt de 465 tokens + 128 gerados, ctx 8192): 9,95. A cada token o modelo relê o KV cache, que cresce; o decode cai
+ao longo da resposta e a média dos primeiros 128 tokens superestima a de uma resposta real em ~20–30%.
+**Decisão (humano, opção 1).** `GEN_TOKENS` = 1024 e o prompt canônico pede um guia longo, para o modelo não parar
+cedo; rodada com menos de 768 tokens gerados (75%) é recusada (`short_generation`), porque a média viria de outra
+posição da resposta. Superestimar é a direção de erro que o projeto não aceita: prometer 9,9 tok/s e entregar ~8.
+**Custo aceito.** Cada rodada leva ~2–3 min; um bench completo, de 8 a 20 min. A calibração continua presa a um
+tamanho de resposta (~1000 tokens), e respostas mais longas ainda ficam um pouco abaixo do previsto.
+**Tarefa futura (opção 2, registrada, não iniciada).** Pôr a leitura do KV cache na fórmula: bytes por token =
+pesos + KV lido até a posição atual, com o bench medindo em duas posições para separar os dois termos. É mais físico
+e vale para qualquer tamanho de resposta; exige enunciado novo (`arquiteto`) e mudança no `nucleo`. Quando existir,
+o tamanho fixo de 1024 deixa de ser necessário.

@@ -10,4 +10,4 @@ Quantization reduces the number of bits used for each weight. A model stored wit
 
 When a model does not fit entirely in the memory of the graphics card, some of its layers can stay in the system memory. Every generated token then has to wait for the slow part, so the overall speed is dominated by the layers that run on the processor. Measuring the real speed on the real machine is the only reliable way to know what to expect, because laptops change their clock speeds depending on temperature, on the power profile and on whether the battery is in use.
 
-Please summarize the notes above in five sentences and mention at least one practical consequence for someone choosing a model for a laptop.
+Using the notes above, write a long and detailed technical guide, of at least 1200 words, for someone choosing a local model for a laptop. Cover memory budgets, quantization, the KV cache, offloading layers to the processor, memory bandwidth, thermal and power limits, and how to measure real speed. Use several sections with headings and concrete examples in each one. Do not stop early.
