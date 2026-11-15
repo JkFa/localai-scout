@@ -908,7 +908,14 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
 
     candidates.sort(key=_sort_key)
     warnings += _assign_primary(candidates, tasks)
-    cpu_cal = next((p.cal for p in pool_list if p.id == "cpu" and p.cal), None)
+    cpu_pool = next((p for p in pool_list if p.id == "cpu" and p.cal), None)
+    cpu_cal = None
+    if cpu_pool is not None:
+        # Fora do casamento exato, o menor prefill elegível (direção do erro, revisão rodada 2).
+        with_prefill = [e for e in (cpu_pool.cal_prefill or (cpu_pool.cal,))
+                        if isinstance(e.get("prefill_tokens_per_s"), (int, float))
+                        and not isinstance(e.get("prefill_tokens_per_s"), bool)]
+        cpu_cal = min(with_prefill, key=lambda e: e["prefill_tokens_per_s"]) if with_prefill else cpu_pool.cal
     slow = _slow_prefill_warning(candidates, tuning.get("prefill_reference"), cpu_cal)
     if slow is not None:
         warnings.append(slow)

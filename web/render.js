@@ -211,7 +211,9 @@ function calPoolBlock(id, p) {
     const diff = eng.result === "different" ? " (mudou)" : eng.result === "unknown" ? " (não confirmado)" : "";
     items.push(["Versão do motor", `gravada ${eng.stored_version ?? "não lida"} × atual ${eng.current_version ?? "não lida"}${diff}`]);
   }
-  items.push(["Correspondência de energia", POWER_MATCH[p.power_match] || String(p.power_match)]);
+  if (p.status === "applied") {
+    items.push(["Correspondência de energia", POWER_MATCH[p.power_match] || String(p.power_match)]);
+  }
   const av = Array.isArray(p.available_power) ? p.available_power : [];
   items.push(["Estados gravados", av.length ? h("ul", { class: "plain" }, av.map((a) => h("li", {}, describePower(a)))) : "nenhum"]);
   return h("div", { class: "cal-pool" }, h("h5", {}, `Pool ${id}`), h("dl", { class: "kv" }, items.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])),

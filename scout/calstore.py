@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-from scout.calibration import (CALIBRATION_SCHEMA_VERSION, MACHINE_FIELDS, MATCH_FIELDS, MEASURED_WITH_FIELDS,
+from scout.calibration import (CALIBRATION_SCHEMA_VERSION, fmt_field_value, MACHINE_FIELDS, MATCH_FIELDS, MEASURED_WITH_FIELDS,
                                POWER_ATTRS, SCOPE_POOLS, CalibrationInput, compare_field, compare_power_attr,
                                entry_eligible, normalize_power)
 
@@ -233,7 +233,8 @@ def identity_drop_reason(stored: dict, current: dict, pool: str) -> str | None:
         r = compare_field(field, stored.get(field), current.get(field))
         if r != "equal":
             return f"{field} {'difere' if r == 'different' else 'não lido'} " \
-                   f"(gravado: {stored.get(field)!r}; agora: {current.get(field)!r})"
+                   f"(gravado: {fmt_field_value(field, stored.get(field))}; " \
+                   f"agora: {fmt_field_value(field, current.get(field))})"
     return None
 
 

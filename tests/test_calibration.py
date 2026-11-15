@@ -522,3 +522,39 @@ def test_chosen_tools_only_from_applicable_pools(systems):
     # entre estados, só a escolhida conta
     batt = dict(entry(power=BATT), tool="llama-bench")
     assert C.chosen_tools(doc(s, {"cpu": [cpu, batt]}), s, BATT) == {"llama-bench"}
+
+
+# ---------------------------------------------------------------- revisão, rodada 2
+
+
+def test_identity_messages_show_bytes_with_unit(systems, catalog, tuning):
+    ram = systems["ddr5_64"]["memory"]["ram_total_bytes"]["value"]
+    d = doc(systems["ddr5_64"], {"cpu": [entry()]}, **{"memory.ram_total_bytes": ram * 2})
+    out = _plan(systems, catalog, tuning, d=d)
+    msg = next(w["message"] for w in out["warnings"] if w["code"] == "calibration_machine_mismatch")
+    assert E.fmt_gb(ram * 2) in msg and E.fmt_gb(ram) in msg
+    assert str(ram) not in msg and str(ram * 2) not in msg
+
+
+def test_discarded_pool_echo_has_no_active_effects(systems, catalog, tuning):
+    mw = {"os.kernel": "6.98.0-1-fixture", "memory.speed_mts": None, "memory.channels": None}
+    d = doc(systems["ddr5_64"], {"cpu": [entry(mw=mw)]}, **{"cpu.model": "OUTRA CPU"})
+    out = _plan(systems, catalog, tuning, d=d)
+    pc = out["inputs"]["calibration"]["pools"]["cpu"]
+    assert pc["status"] == "discarded"
+    assert pc["match"] and all(ln["effect"] == "none" for ln in pc["match"])
+    assert "calibration_kernel_changed" not in _codes(out) and "calibration_memory_unverified" not in _codes(out)
+
+
+def test_slow_prefill_outside_exact_match_cites_lowest_eligible_prefill(systems, catalog, tuning):
+    ref = {"tokens_per_s": 11.7, "measured_on": "REFERÊNCIA", "tool": "t", "date": "2026-11-15"}
+    pools = {"cpu": [entry(power=AC, bw=10_000_000_000, prefill=40.0),
+                     entry(power=BATT, bw=30_000_000_000, prefill=20.0)]}
+    out = _plan(systems, catalog, dict(tuning, prefill_reference=ref), pools,
+                power={"on_ac": False, "profile": "performance", "not_applicable": []})
+    assert out["inputs"]["calibration"]["pools"]["cpu"]["power_match"] == "other_state"
+    msg = next(w["message"] for w in out["warnings"] if w["code"] == "slow_prefill_cpu")
+    assert "~20 tokens/s" in msg and "~40 tokens/s" not in msg
+    out = _plan(systems, catalog, dict(tuning, prefill_reference=ref), pools)   # casamento exato: a escolhida
+    msg = next(w["message"] for w in out["warnings"] if w["code"] == "slow_prefill_cpu")
+    assert "~40 tokens/s" in msg

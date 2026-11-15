@@ -542,3 +542,14 @@ def test_measure_records_conditions_and_swap_per_round(monkeypatch, fixed_env):
     r = B.measure_model(t, "ollama", None, "dense:7b", AC)
     assert r["conditions"] == {"before": {"scaling_governor": "g"}, "after": {"scaling_governor": "g"}}
     assert r["warmup"]["swap_in_pages"] == 3 and all(x["swap_in_pages"] == 3 and x["swap_out_pages"] == 0 for x in r["rounds"])
+
+
+def test_cli_run_records_live_kernel_not_system_file_kernel(monkeypatch, tmp_path, capsys):
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    live = json.loads(json.dumps(SYS))
+    live["os"]["kernel"]["value"] = "6.97.0-9-fixture-ao-vivo"
+    monkeypatch.setattr(B, "live_system", lambda: live)
+    assert main(argv + ["--run"]) == 0
+    entry = json.loads(cal.read_text())["pools"]["cpu"][0]
+    assert entry["measured_with"]["os.kernel"] == "6.97.0-9-fixture-ao-vivo"
+    assert "6.97.0-9-fixture-ao-vivo" in capsys.readouterr().err

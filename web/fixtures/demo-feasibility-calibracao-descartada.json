@@ -492,7 +492,7 @@
      "match": [
       {
        "current": "6.8.0-fixture",
-       "effect": "downgrade",
+       "effect": "none",
        "field": "os.kernel",
        "layer": "software",
        "result": "different",
@@ -501,7 +501,7 @@
       },
       {
        "current": 3200,
-       "effect": "cap_medium",
+       "effect": "none",
        "field": "memory.speed_mts",
        "layer": 2,
        "result": "unknown",
@@ -941,7 +941,7 @@
   {
    "code": "calibration_machine_mismatch",
    "field": "memory.ram_total_bytes",
-   "message": "memory.ram_total_bytes difere (calibração: 16000000000; agora: 17179869184): calibração do pool cpu descartada, tokens/s volta ao eta. Rode `scout bench --run` nesta máquina para recalibrar.",
+   "message": "memory.ram_total_bytes difere (calibração: 14.90 GiB; agora: 16.00 GiB): calibração do pool cpu descartada, tokens/s volta ao eta. Rode `scout bench --run` nesta máquina para recalibrar.",
    "severity": "warn"
   },
   {

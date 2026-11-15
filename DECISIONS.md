@@ -810,3 +810,13 @@ condições, e a causa não pode ser recuperada; a suspeita mais forte é press�
   `powerprofilesctl`, mas com TLP, tuned ou governor trocado à mão, o perfil é "não aplicável" dos dois lados e a
   troca não é detectada. Tratar cpufreq/EPP como evidência de perfil tornaria o perfil desconhecido em quase toda
   máquina Linux e prenderia todo desktop em `medium`, desfazendo a decisão PE.1.
+
+## 2026-11-15 — achados menores da segunda revisão da Tarefa 5 (corrigidos pela sessão principal)
+
+**Decisão (humano: opção 1, corrigir inline em vez de abrir terceira rodada com `nucleo`/`coletor`).**
+- (a) Bytes de campos de identidade aparecem via `fmt_gb` nas mensagens do solver e no stderr do merge
+  (`calibration.fmt_field_value`), conforme a regra 4. A linha de calibração do bench usa `fmt_gbps`.
+- (b) Num pool não aplicado, as linhas `match` do pool vão com efeito `none` no eco, e o frontend não mostra a
+  correspondência de energia: kernel e camada 2 não modulam um pool que caiu no eta.
+- C. O aviso `slow_prefill_cpu` usa o menor prefill elegível fora do casamento exato de energia, como o TTFT.
+- D. O bench grava em `measured_with.os.kernel` o kernel lido ao vivo, não o do `--system`, e avisa se diferem.

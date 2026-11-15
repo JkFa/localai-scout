@@ -472,7 +472,14 @@ def _cmd_bench(args: argparse.Namespace) -> int:
         sys.stderr.write("scout: medição incompleta: calibração NÃO gravada\n")
         return 1
     cal = B.build_calibration(results, results[0]["measured_at"][:10])
-    new_doc, notes = calstore.merge_calibration(old, identity, cal, __version__, measured_with(system))
+    mw = measured_with(system)
+    live_kernel = measured_with(live)["os.kernel"] if live is not None else None
+    if live_kernel is not None and live_kernel != mw["os.kernel"]:
+        sys.stderr.write(f"scout: AVISO: o --system foi coletado no kernel {mw['os.kernel']}, mas a medição "
+                         f"rodou no kernel {live_kernel}; a entrada grava o kernel da medição.\n")
+    if live_kernel is not None:
+        mw["os.kernel"] = live_kernel
+    new_doc, notes = calstore.merge_calibration(old, identity, cal, __version__, mw)
     for n in notes:
         sys.stderr.write(f"scout: calibração: {n}\n")
     try:
@@ -480,7 +487,7 @@ def _cmd_bench(args: argparse.Namespace) -> int:
     except calstore.CalibrationError as e:
         raise InputError(str(e)) from e
     for pool, c in sorted(cal.items()):
-        sys.stdout.write(f"calibração {pool}: banda {c['bandwidth_bytes_per_s'] / 1e9:.1f} GB/s, overhead "
+        sys.stdout.write(f"calibração {pool}: banda {fmt_gbps(c['bandwidth_bytes_per_s'])}, overhead "
                          f"{c['overhead_s_per_token']:.4f} s/token, forma {c['form']}, "
                          f"{'estável' if c['stable'] else 'não estável'}, {describe_power(c['power'])}\n")
     sys.stdout.write(f"calibração gravada em {cal_path}\n")

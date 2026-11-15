@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from scout.estimate import fmt_gbps
+from scout.estimate import fmt_gb, fmt_gbps
 
 CALIBRATION_SCHEMA_VERSION = 1
 
@@ -315,8 +315,13 @@ def _w(code: str, severity: str, message: str, field: str | None = None) -> dict
     return w
 
 
-def _fmt_val(v: Any) -> str:
-    return "null" if v is None else (f"'{v}'" if isinstance(v, str) else str(v))
+def fmt_field_value(field: str, v: Any) -> str:
+    """Valor de campo de identidade para mensagens. Bytes só aparecem via fmt_gb (regra 4)."""
+    if v is None:
+        return "null"
+    if field.endswith("_bytes") and isinstance(v, int) and not isinstance(v, bool):
+        return fmt_gb(v)
+    return f"'{v}'" if isinstance(v, str) else str(v)
 
 
 def _memory_unverified_text(platform: Any, current_missing: bool) -> str:
@@ -389,8 +394,8 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
                 code, what = "calibration_machine_mismatch", "difere"
             warnings.append(_w(
                 code, "warn",
-                f"{ln['field']} {what} (calibração: {_fmt_val(ln['stored'])}; agora: "
-                f"{_fmt_val(ln['current'])}): calibração do pool {pools} descartada, tokens/s volta "
+                f"{ln['field']} {what} (calibração: {fmt_field_value(ln['field'], ln['stored'])}; agora: "
+                f"{fmt_field_value(ln['field'], ln['current'])}): calibração do pool {pools} descartada, tokens/s volta "
                 "ao eta. Rode `scout bench --run` nesta máquina para recalibrar.",
                 ln["field"]))
 
@@ -424,7 +429,7 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
             discard.append("calibration_machine_mismatch")
             if not outdated:
                 diffs = list(dict.fromkeys(
-                    f"{ln['field']}: calibração {_fmt_val(ln['stored'])}, agora {_fmt_val(ln['current'])}"
+                    f"{ln['field']}: calibração {fmt_field_value(ln['field'], ln['stored'])}, agora {fmt_field_value(ln['field'], ln['current'])}"
                     for e in entries for ln in entry_match_lines(e.get("measured_with"), current_mw, pid)
                     if ln["effect"] == "discard"))
                 first = next(ln["field"] for ln in entry_match_lines(entries[0].get("measured_with"), current_mw, pid)
@@ -505,6 +510,9 @@ def evaluate(calibration: CalibrationInput | None, system: dict, power: dict | N
                                      _memory_unverified_text(current_machine["platform"], cur_missing),
                                      mem[0]["field"])
 
+        if status != "applied":
+            # Pool descartado ou ausente: kernel e camada 2 não modulam nada (revisão, rodada 2).
+            pool_match = [{**ln, "effect": "none"} for ln in pool_match]
         echo_pools[pid] = {
             "status": status,
             "reasons": list(dict.fromkeys(reasons)),
