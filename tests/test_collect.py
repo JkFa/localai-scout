@@ -199,12 +199,13 @@ def test_collect_nvidia_end_to_end(monkeypatch):
             return txt("dmidecode_ddr5.txt")
         return real(cmd, probes, timeout, probe)
     monkeypatch.setattr(C, "run_cmd", fake)
+    monkeypatch.setattr(C, "_load_bw_table", lambda: {"ram": {}, "gpu": {}})
     doc = C.collect()
     assert_valid("system.schema.json", doc)
     gpus = doc["gpus"]["value"]
     assert [g["index"] for g in gpus] == [0, 1]
     assert gpus[0]["bf16"]["value"] is True and gpus[0]["backend"]["value"] == "cuda"
-    assert gpus[0]["bandwidth_bytes_per_s"]["value"] is None  # sem tabela por nome de GPU
+    assert gpus[0]["bandwidth_bytes_per_s"]["value"] is None  # fora da tabela e sem fórmula: null
     assert doc["memory"]["bandwidth_bytes_per_s"]["value"] == 4400 * 2 * 8 * 10**6
     assert doc["memory"]["bandwidth_bytes_per_s"]["source"].startswith("estimate:")
 
@@ -319,22 +320,21 @@ def test_f3_bandwidth_never_more_confident_than_inputs():
     assert P.ram_bandwidth(3200, 2, "DDR4", None, "high", "high")[2] == "medium"
 
 
-GT = {"reviewed": False, "entries": [
-    {"match": "rtx 3060", "bandwidth_bytes_per_s": 360_000_000_000, "source_url": "https://www.nvidia.com/x", "verified_at": "2026-11-15"},
-    {"match": "rtx 3060 ti", "bandwidth_bytes_per_s": 448_000_000_000, "source_url": "https://www.nvidia.com/y", "verified_at": "2026-11-15"},
-    {"match": "rx 7800 xt", "bandwidth_bytes_per_s": 624_000_000_000, "source_url": "https://www.amd.com/z", "verified_at": "2026-11-15"},
-    {"match": "rx 6600", "bandwidth_bytes_per_s": 224_000_000_000, "source_url": "https://evil.example/q", "verified_at": "2026-11-15"}]}
+URL_BW = "https://www.nvidia.com/a"
+GT = {"ram": {}, "gpu": {
+    "NVIDIA GeForce RTX 3060|12884901888": {"bandwidth_bytes_s": 360_000_000_000, "source_url": [URL_BW, "https://nvidianews.nvidia.com/b"]},
+    "Evil GPU|1": {"bandwidth_bytes_s": 1, "source_url": ["https://evil.example/q"]},
+    "Zero GPU|1": {"bandwidth_bytes_s": 0, "source_url": [URL_BW]}}}
 
 
-def test_gpu_table_lookup():
-    L = P.gpu_bandwidth_lookup
-    assert L("NVIDIA GeForce RTX 3060", GT)[0] == 360_000_000_000
-    assert L("AMD Radeon RX 7800 XT", GT)[0] == 624_000_000_000
-    assert L("NVIDIA GeForce RTX 3060 Ti", GT)[2] == "ambiguous_table_match"  # casa 2 entradas
-    assert L("AMD Radeon RX 6600", GT)[2] == "no_table_match"  # fonte não oficial é ignorada
-    assert L("Mendocino", GT)[2] == "no_table_match"
-    assert L("x", None)[0] is None and L(None, GT)[0] is None
-    assert L("x", {"entries": [{"match": ""}]})[0] is None
+def test_gpu_table_lookup_exact_name_and_vram():
+    L = P.gpu_table_lookup
+    assert L("NVIDIA GeForce RTX 3060", 12884901888, GT)[0] == 360_000_000_000
+    assert L("NVIDIA GeForce RTX 3060", 8589934592, GT) == (None, [])  # versão de 8 GB não casa
+    assert L("nvidia geforce rtx 3060", 12884901888, GT) == (None, [])  # nome exato
+    assert L("NVIDIA GeForce RTX 3060 Ti", 12884901888, GT) == (None, [])
+    assert L("Evil GPU", 1, GT) == (None, []) and L("Zero GPU", 1, GT) == (None, [])  # fonte não oficial / valor inválido
+    assert L("x", None, GT) == (None, []) and L(None, 1, GT) == (None, []) and L("x", 1, None) == (None, [])
 
 
 def test_gpu_table_used_in_collect(monkeypatch):
@@ -347,12 +347,12 @@ def test_gpu_table_used_in_collect(monkeypatch):
             return txt("nvidia_smi.csv")
         return real(cmd, probes, timeout, probe)
     monkeypatch.setattr(C, "run_cmd", fake)
-    monkeypatch.setattr(C, "_load_gpu_table", lambda: GT)
+    monkeypatch.setattr(C, "_load_bw_table", lambda: GT)
     doc = C.collect()
     assert_valid("system.schema.json", doc)
     g0, g1 = doc["gpus"]["value"]
-    assert g0["bandwidth_bytes_per_s"]["value"] == 360_000_000_000
-    assert g0["bandwidth_bytes_per_s"]["source"] == "table" and g0["bandwidth_bytes_per_s"]["confidence"] == "medium"
+    assert g0["vram_total_bytes"]["value"] == 12288 * 1024 * 1024 and g0["bandwidth_bytes_per_s"]["value"] == 360_000_000_000
+    assert g0["bandwidth_bytes_per_s"]["source"] == "table" and g0["bandwidth_bytes_per_s"]["confidence"] == "high"
     assert g1["bandwidth_bytes_per_s"]["value"] is None  # RTX 4090 fora da tabela
 
 
@@ -369,3 +369,41 @@ def test_f2_sysfs_source_and_high(monkeypatch):
     assert (cpu["cores_performance"]["value"], cpu["cores_efficiency"]["value"]) == (6, 8)
     for k in ("cores_performance", "cores_efficiency"):
         assert cpu[k]["source"] == "sysfs:cpu_core/cpu_atom" and cpu[k]["confidence"] == "high"
+
+
+def _rocm_igpu(monkeypatch, vram_vendor: bool, dmi: bool):
+    _no_tools(monkeypatch)
+    real = C.run_cmd
+
+    def fake(cmd, probes, timeout=5.0, probe=None):
+        if cmd[0] == "rocm-smi":
+            probes.add("rocm-smi", "ok")
+            return txt("rocm_smi.json")
+        if cmd[0] == "dmidecode" and dmi:
+            probes.add("dmidecode", "ok")
+            return txt("dmidecode_ddr5.txt")
+        return real(cmd, probes, timeout, probe)
+    monkeypatch.setattr(C, "run_cmd", fake)
+    monkeypatch.setattr(C, "_read_drm", lambda probes: [
+        {"vendor": "0x1002", "vram_total": "536870912", "vram_used": "0", "has_vram_vendor": vram_vendor}])
+    return C.collect()
+
+
+def test_igpu_uses_system_ram_bandwidth(monkeypatch):
+    doc = _rocm_igpu(monkeypatch, vram_vendor=False, dmi=True)
+    assert_valid("system.schema.json", doc)
+    bw, ram = doc["gpus"]["value"][0]["bandwidth_bytes_per_s"], doc["memory"]["bandwidth_bytes_per_s"]
+    assert bw["value"] == ram["value"] and bw["confidence"] == ram["confidence"] and bw["source"] == "igpu_shares_ram"
+
+
+def test_igpu_with_null_ram_bandwidth_is_null(monkeypatch):
+    doc = _rocm_igpu(monkeypatch, vram_vendor=False, dmi=False)
+    assert_valid("system.schema.json", doc)
+    bw = doc["gpus"]["value"][0]["bandwidth_bytes_per_s"]
+    assert bw["value"] is None and bw["confidence"] == "low" and bw["source"] == "igpu_shares_ram"
+
+
+def test_discrete_amd_not_in_table_is_null_without_formula(monkeypatch):
+    doc = _rocm_igpu(monkeypatch, vram_vendor=True, dmi=True)
+    bw = doc["gpus"]["value"][0]["bandwidth_bytes_per_s"]
+    assert bw["value"] is None and bw["confidence"] == "low" and bw["source"] != "igpu_shares_ram"
