@@ -48,6 +48,7 @@ class Intent:
     tasks: tuple[str, ...]
     ctx: int = 8192
     commercial_use: bool = False
+    prompt_tokens: int | None = None  # só para ttft com prefill calibrado (bench_spec.md)
     batch: int = 1
     kv_quant: str = "f16"
 
@@ -64,6 +65,10 @@ class Pool:
     eta: float
     low_confidence: bool
     provenance: dict[str, str]
+    # Calibração medida por `scout bench` (tuning.calibration.<id>) e como o
+    # estado de energia atual se compara ao dela: "same" | "mismatch" | "unknown".
+    cal: dict | None = None
+    cal_power: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -93,6 +98,8 @@ class Attempt:
     # Critério de ordem quando tokens/s é null (m7_fixes.md F4). Nunca exibidos.
     bytes_cpu_per_token: int = 0  # bytes lidos da RAM por token (MoE: fração ativa)
     bytes_per_token: int = 0      # bytes lidos por token, total
+    cal_pools: tuple[str, ...] = ()  # pools com camadas cujo trecho usou calibração
+    eta_pools: tuple[str, ...] = ()  # pools com camadas cujo trecho usou bw × eta
 
 
 # --------------------------------------------------------------------------
@@ -343,17 +350,35 @@ def _attempts(
     cpu = pools.get("cpu")
     bytes_camada = weights // n_layers
 
+    def segments(n_gpu: int) -> list[tuple[Pool | None, int]]:
+        return [(p, n) for p, n in ((gpu, n_gpu), (cpu, n_layers - n_gpu)) if n > 0]
+
     def tps(n_gpu: int) -> float | None:
-        bw_gpu = gpu.bw if gpu is not None else None
-        eta_gpu = gpu.eta if gpu is not None else 1.0
-        bw_cpu = cpu.bw if cpu is not None else None
-        eta_cpu = cpu.eta if cpu is not None else 1.0
-        return E.tokens_per_s(layer_bytes_read, n_layers, n_gpu, bw_gpu, bw_cpu, eta_gpu, eta_cpu)
+        if not any(p is not None and p.cal for p, _ in segments(n_gpu)):
+            bw_gpu = gpu.bw if gpu is not None else None
+            eta_gpu = gpu.eta if gpu is not None else 1.0
+            bw_cpu = cpu.bw if cpu is not None else None
+            eta_cpu = cpu.eta if cpu is not None else 1.0
+            return E.tokens_per_s(layer_bytes_read, n_layers, n_gpu, bw_gpu, bw_cpu, eta_gpu, eta_cpu)
+        # Calibração (bench_spec.md): cada trecho calibrado usa bytes/banda + overhead.
+        t = 0.0
+        for p, n in segments(n_gpu):
+            if p is None:
+                return None
+            cal = p.cal or {}
+            seg = E.segment_seconds(layer_bytes_read * n, p.bw, p.eta,
+                                    cal.get("bandwidth_bytes_per_s"), float(cal.get("overhead_s_per_token") or 0.0))
+            if seg is None:
+                return None
+            t += seg
+        return 1 / t if t > 0 else None
 
     def make(placement: str, n_gpu: int, usages: tuple[dict[str, Any], ...], used: tuple[Pool, ...]) -> Attempt:
+        segs = [p for p, _ in segments(n_gpu) if p is not None]
         return Attempt(placement, n_gpu, usages, weights + kv + buf, _worst_tier(usages),
                        tps(n_gpu), used, _missing(usages),
-                       layer_bytes_read * (n_layers - n_gpu), layer_bytes_read * n_layers)
+                       layer_bytes_read * (n_layers - n_gpu), layer_bytes_read * n_layers,
+                       tuple(p.id for p in segs if p.cal), tuple(p.id for p in segs if not p.cal))
 
     # gpu_full (ou o pool unificado inteiro)
     if gpu is not None:
@@ -568,26 +593,33 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
         # Sem decode, eta e banda não entram em número nenhum deste candidato.
         reasons.add("decode_not_applicable")
     else:
-        if tuning_default:
+        # Trecho sem calibração usa eta: tokens/s no máximo medium (bench_spec.md).
+        if a.eta_pools:
             reasons.add("eta_default")
         if a.tps is None:
             reasons.add("bandwidth_unknown")
             reasons.add("ranked_by_bytes")
-        # Banda só conta se o pool tem camadas neste placement.
-        bw_pools = [p for p in a.pools_used
-                    if (p.id == "cpu" and a.n_gpu < m["n_layers"]) or (p.id != "cpu" and a.n_gpu > 0)]
-        if any(p.bw_estimated for p in bw_pools):
+        # Banda de hardware só conta se o trecho tem camadas e não é calibrado.
+        if any(p.bw_estimated for p in a.pools_used if p.id in a.eta_pools):
             reasons.add("bandwidth_estimated")
+        reasons |= _calibration_reasons(m, [p for p in a.pools_used if p.id in a.cal_pools])
     low_hw = any(p.low_confidence for p in a.pools_used)
     if low_hw:
         reasons.add("hardware_low_confidence")
 
     if fallback or low_hw:
         confidence = "low"
-    elif reasons & {"eta_default", "bandwidth_estimated", "bandwidth_unknown"}:
+    elif reasons & MEDIUM_CAP_REASONS:
         confidence = "medium"
     else:
         confidence = "high"
+    if "calibration_power_mismatch" in reasons:  # rebaixa um nível
+        confidence = {"high": "medium", "medium": "low", "low": "low"}[confidence]
+
+    ttft = _ttft(m, a, intent) if decode_applies else None
+    if ttft is not None:
+        reasons.discard("ttft_unspecified")
+    all_calibrated = bool(a.cal_pools) and not a.eta_pools
 
     w_prov = "estimated" if fallback else "catalog"
     hw_prov = "estimated" if low_hw else "calculated"
@@ -609,7 +641,7 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
         "by_pool": list(a.by_pool),
         "tier": a.tier,
         "tokens_per_s_est": _round_tps(a.tps),
-        "ttft_s_est": None,  # A17: sem fórmula de prefill até haver medição
+        "ttft_s_est": ttft,  # A17: null salvo prefill calibrado do próprio modelo
         "confidence": confidence,
         "confidence_reasons": sorted(reasons),
         "blocked": blocked,
@@ -622,9 +654,67 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
             "buffer_bytes": "calculated",
             "total_bytes": _worst(w_prov, "calculated"),
             "n_gpu_layers": hw_prov if a.placement == "hybrid" else "calculated",
-            "tokens_per_s_est": "estimated",
+            "tokens_per_s_est": "calculated" if all_calibrated else "estimated",
+            **({"ttft_s_est": "calculated"} if ttft is not None else {}),
         },
+        **({"tokens_per_s_basis": "calibration" if all_calibrated
+            else ("mixed" if a.cal_pools else "eta")} if decode_applies else {}),
     }
+
+
+MEDIUM_CAP_REASONS = frozenset({
+    "eta_default", "bandwidth_estimated", "bandwidth_unknown",
+    "calibration_unstable", "calibration_other_arch", "calibration_power_unknown",
+})
+
+
+def norm_arch(a: Any) -> str | None:
+    """"qwen3_moe" (HF model_type) == "qwen3moe" (GGUF general.architecture)."""
+    if not isinstance(a, str):
+        return None
+    n = a.lower().replace("_", "").replace("-", "").strip()
+    return n or None
+
+
+def _calibration_reasons(m: dict, cal_pools: list[Pool]) -> set[str]:
+    """Motivos de confiança dos trechos calibrados (bench_spec.md, Consumo no plan)."""
+    reasons: set[str] = set()
+    for p in cal_pools:
+        cal = p.cal or {}
+        if cal.get("stable") is not True:
+            reasons.add("calibration_unstable")
+        if p.cal_power == "mismatch":
+            reasons.add("calibration_power_mismatch")
+        elif p.cal_power != "same":
+            reasons.add("calibration_power_unknown")
+        models = [x for x in cal.get("models") or [] if isinstance(x, dict)]
+        ids = {x.get("id") for x in models}
+        archs = {norm_arch(x.get("architecture")) for x in models} - {None}
+        arch = norm_arch(m.get("architecture"))
+        # Mesmo modelo medido = mesma arquitetura. Senão compara normalizado;
+        # null em qualquer lado conta como diferente (DECISIONS.md).
+        same = m["id"] in ids or (arch is not None and arch in archs)
+        if not same:
+            reasons.add("calibration_other_arch")
+    return reasons
+
+
+def _ttft(m: dict, a: Attempt, intent: Intent) -> float | None:
+    """ttft = prompt_tokens / prefill calibrado, só quando é seguro.
+
+    Exige: intent.prompt_tokens; placement de um pool só (gpu_full/cpu_only),
+    calibrado, com prefill_tokens_per_s (só gravado se estável); e a
+    calibração medida com UM modelo, que é este. Prefill é limitado por
+    computação e escala com o modelo: o número de outro modelo não se aplica.
+    """
+    if intent.prompt_tokens is None or a.placement == "hybrid" or len(a.pools_used) != 1:
+        return None
+    cal = a.pools_used[0].cal or {}
+    prefill = cal.get("prefill_tokens_per_s")
+    models = [x.get("id") for x in cal.get("models") or [] if isinstance(x, dict)]
+    if not isinstance(prefill, (int, float)) or isinstance(prefill, bool) or prefill <= 0 or models != [m["id"]]:
+        return None
+    return round(intent.prompt_tokens / prefill, 2)
 
 
 def _quality_alternative(chosen: dict, pool: list[dict]) -> dict | None:
@@ -680,7 +770,8 @@ def _cpu_majority(c: dict) -> bool:
         c["placement"] == "hybrid" and n_layers - c["n_gpu_layers"] > c["n_gpu_layers"])
 
 
-def _slow_prefill_warning(candidates: list[dict], ref: dict | None) -> dict[str, Any] | None:
+def _slow_prefill_warning(candidates: list[dict], ref: dict | None,
+                          cpu_cal: dict | None = None) -> dict[str, Any] | None:
     """Aviso slow_prefill_cpu: prompt processado na CPU é lento.
 
     A ordem de grandeza vem de uma MEDIÇÃO registrada em tuning
@@ -693,8 +784,15 @@ def _slow_prefill_warning(candidates: list[dict], ref: dict | None) -> dict[str,
         return None
     msg = (f"Processar o prompt na CPU é lento ({len(hit)} candidato(s) com a maioria das "
            f"camadas na CPU: {', '.join(hit)}).")
+    local = (cpu_cal or {}).get("prefill_tokens_per_s")
     tps = (ref or {}).get("tokens_per_s")
-    if isinstance(tps, (int, float)) and not isinstance(tps, bool) and tps > 0:
+    if isinstance(local, (int, float)) and not isinstance(local, bool) and local > 0:
+        ids = ", ".join(str(x.get("id")) for x in cpu_cal.get("models") or [] if isinstance(x, dict))
+        msg += (f" Medido nesta máquina por scout bench: ~{round(local)} tokens/s de prefill na CPU "
+                f"({ids or 'modelo não informado'}; {cpu_cal.get('tool', 'ferramenta não informada')}, "
+                f"{cpu_cal.get('date', 'sem data')}); nesse ritmo, um prompt de "
+                f"{_round_sig2(local * 60)} tokens leva perto de um minuto. Outro modelo muda esse número.")
+    elif isinstance(tps, (int, float)) and not isinstance(tps, bool) and tps > 0:
         msg += (f" Medição de referência: ~{round(tps)} tokens/s de prefill em "
                 f"{ref.get('measured_on', 'máquina não informada')} "
                 f"({ref.get('tool', 'ferramenta não informada')}, {ref.get('date', 'sem data')}); "
@@ -724,7 +822,56 @@ def _catalog_sha256(catalog: dict) -> str:
 # --------------------------------------------------------------------------
 
 
-def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
+def _power_compare(cal_power: Any, now: dict | None) -> str:
+    """"same" só se on_ac e profile batem e são conhecidos dos dois lados;
+    "mismatch" se algum valor conhecido dos dois lados difere; senão "unknown"."""
+    cal_power = cal_power if isinstance(cal_power, dict) else {}
+    now = now or {}
+    keys = ("on_ac", "profile")
+    known = [k for k in keys if cal_power.get(k) is not None and now.get(k) is not None]
+    if any(cal_power[k] != now[k] for k in known):
+        return "mismatch"
+    return "same" if len(known) == len(keys) else "unknown"
+
+
+def _attach_calibration(pool_list: list[Pool], tuning: dict, power: dict | None
+                        ) -> tuple[list[Pool], list[dict[str, Any]]]:
+    calib = tuning.get("calibration") or {}
+    if not isinstance(calib, dict):
+        raise ValueError("tuning.calibration precisa ser um objeto {pool: calibração}")
+    out: list[Pool] = []
+    warnings: list[dict[str, Any]] = []
+    for p in pool_list:
+        cal = calib.get(p.id)
+        if cal is None:
+            out.append(p)
+            continue
+        bw, ovh = cal.get("bandwidth_bytes_per_s") if isinstance(cal, dict) else None, None
+        if isinstance(cal, dict):
+            ovh = cal.get("overhead_s_per_token", 0)
+        if (isinstance(bw, bool) or not isinstance(bw, int) or bw < 1
+                or isinstance(ovh, bool) or not isinstance(ovh, (int, float)) or ovh < 0):
+            raise ValueError(f"tuning.calibration.{p.id} inválida: banda inteira > 0 e overhead >= 0")
+        cmp = _power_compare(cal.get("power"), power)
+        if cmp == "mismatch":
+            warnings.append(_warning(
+                "calibration_power_mismatch", "warn",
+                f"A calibração do pool {p.id} foi medida em outro estado de energia "
+                f"(medição: {_power_text(cal.get('power'))}; agora: {_power_text(power)}); "
+                "tokens/s calibrado com confiança rebaixada.",
+                f"inputs.tuning.calibration.{p.id}.power"))
+        out.append(replace(p, cal=cal, cal_power=cmp))
+    return out, warnings
+
+
+def _power_text(pw: Any) -> str:
+    pw = pw if isinstance(pw, dict) else {}
+    ac = {True: "na tomada", False: "na bateria"}.get(pw.get("on_ac"), "energia desconhecida")
+    return f"{ac}, perfil {pw.get('profile') or 'desconhecido'}"
+
+
+def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
+          power: dict | None = None) -> dict:
     """Plano de viabilidade (feasibility.json). Sem arquivo, sem rede, sem relógio."""
     if intent.kv_quant not in E.KV_ELEM_BITS:
         raise ValueError(f"kv_quant inválido: {intent.kv_quant!r}")
@@ -735,6 +882,12 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
         raise ValueError("intent.tasks vazio ou sem tarefa conhecida")
 
     pool_list, warnings = _build_pools(system, tuning)
+    # power = estado de energia ATUAL {on_ac, profile}, lido pela CLI; só serve
+    # para comparar com o da calibração (bench_spec.md).
+    pool_list, cal_warnings = _attach_calibration(pool_list, tuning, power)
+    warnings += cal_warnings
+    if intent.prompt_tokens is not None and intent.prompt_tokens < 1:
+        raise ValueError("prompt_tokens precisa ser >= 1")
     warnings = [_warning("swap_not_a_fix", "info", SWAP_MESSAGE)] + warnings + _system_warnings(system)
     pools = {p.id: p for p in pool_list}
     tuning_default = tuning.get("source", "default") == "default"
@@ -760,7 +913,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
 
     candidates.sort(key=_sort_key)
     warnings += _assign_primary(candidates, tasks)
-    slow = _slow_prefill_warning(candidates, tuning.get("prefill_reference"))
+    cpu_cal = next((p.cal for p in pool_list if p.id == "cpu" and p.cal), None)
+    slow = _slow_prefill_warning(candidates, tuning.get("prefill_reference"), cpu_cal)
     if slow is not None:
         warnings.append(slow)
     for c in candidates:
@@ -778,7 +932,10 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
                 "commercial_use": intent.commercial_use,
                 "batch": intent.batch,
                 "kv_quant": intent.kv_quant,
+                **({"prompt_tokens": intent.prompt_tokens} if intent.prompt_tokens is not None else {}),
             },
+            **({"power": {"on_ac": (power or {}).get("on_ac"), "profile": (power or {}).get("profile")}}
+               if tuning.get("calibration") else {}),
             "system": system,
             "catalog": {
                 "sha256": _catalog_sha256(catalog),
@@ -793,6 +950,7 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
                    if tuning.get("max_bpw_offload") is not None else {}),
                 **({"prefill_reference": tuning["prefill_reference"]}
                    if isinstance(tuning.get("prefill_reference"), dict) else {}),
+                **({"calibration": tuning["calibration"]} if tuning.get("calibration") else {}),
             },
         },
         "pools": [p.to_json() for p in pool_list],

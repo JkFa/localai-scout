@@ -642,3 +642,55 @@ prefill num Ryzen 5 7520U com Qwen3-4B Q4_K_M).
   `inputs.tuning`. A mensagem deriva "~N tok/s" e "prompt de M tokens ≈ um
   minuto" (M = tok/s × 60, 2 algarismos significativos) do valor; sem o
   bloco, sai sem número. `ttft_s_est` continua null.
+
+## 2026-11-15 — scout bench: banda efetiva + overhead em vez de eta (coletor)
+
+**Decisão.** A calibração deixou de ser `eta_novo = eta * medido/estimado` e passou a ser `t = bytes/banda_efetiva + overhead`
+por pool, gravada em `data/tuning.json` (`calibration.<pool>`). `eta_gpu`/`eta_cpu` nunca são alterados pelo bench.
+**Evidência (mesma máquina, Ryzen 5 7520U, Qwen3-4B Q4_K_M, banda teórica 44 GB/s):** na bateria 4,46 tok/s = 11,1 GB/s
+efetivos; na tomada com perfil performance 7,94 tok/s = 19,8 GB/s. Um eta global teria de valer 0,25 numa condição e 0,45
+noutra: a eficiência não é propriedade da máquina, depende do estado de energia e do modelo. Banda efetiva medida, rotulada
+com o estado de energia, é um fato; eta calibrado em cima de um chute é um chute com cara de dado. O overhead fixo separa o
+que escala com os bytes do que não escala (2 modelos de tamanhos diferentes); se for < 5% do tempo do menor modelo ou
+negativo, volta a 1 parâmetro e a forma usada e os dois valores ficam registrados.
+**Estabilização.** A 1ª rodada após o carregamento subestima (frequência e caches); 1 aquecimento descartado e rodadas
+até as duas últimas ficarem a até 5% (decode e prefill separados), teto de 6; sem par estável, `stable: false`,
+confiança rebaixada e prefill null. Todas as rodadas ficam no measured.json.
+**Escolhas de implementação (não estavam no enunciado).** `--gguf` pareia com `--model` para o llama-bench (sem caminho de
+arquivo no catálogo). Banda 1p ponderada pelos bytes. `hybrid` é recusado (tempo não atribuível a um pool só) e embeddings
+também (sem decode). A arquitetura vem de `general.architecture` do Ollama; com llama-bench fica null (o catálogo não tem o
+campo). A única rede do bench é a API local do Ollama em 127.0.0.1; `hf.py` continua o único módulo que fala com a internet.
+
+## 2026-11-15 — consumo da calibração no plan (Tarefa 4)
+
+**Decisão (humano, `schemas/bench_spec.md`, parte do `nucleo`).**
+- Trecho de pool com `tuning.calibration.<pool>` usa `bytes/banda +
+  overhead` em vez de `bytes/(bw × eta)`; sem calibração, nada muda. eta
+  nunca é alterado. Candidato ganha `tokens_per_s_basis`
+  (calibration/eta/mixed); só `calibration` dá proveniência `calculated`.
+- Confiança: trecho por eta → no máximo medium (`eta_default` passa a sair
+  sempre que um trecho usa eta, não só com `source: default`). Trecho
+  calibrado: `stable: false` → medium; energia atual desconhecida → medium
+  (`calibration_power_unknown`); energia diferente → aviso
+  `calibration_power_mismatch` e um nível abaixo; modelo fora dos medidos e de
+  arquitetura que não casa → medium (`calibration_other_arch`).
+- Escolhas do `nucleo` dentro do enunciado: (a) híbrido com os dois pools
+  calibrados soma o overhead inteiro de cada trecho (leitura literal; overhead
+  proporcional às camadas seria mais físico, fica para o humano); (b) o
+  próprio modelo medido conta como mesma arquitetura mesmo com
+  `architecture` null; (c) `ttft_s_est` só com `--prompt-tokens`, placement
+  de um pool, `prefill_tokens_per_s` presente e calibração medida com UM
+  modelo que é o candidato — o prefill de outro modelo não se transfere;
+  (d) energia atual lida pela CLI com `scout.bench.read_power` só quando há
+  calibração, para que a saída sem calibração não dependa do estado da
+  máquina; (e) calibração malformada (banda não inteira > 0, overhead < 0)
+  faz o plan falhar alto.
+
+## 2026-11-15 — arquitetura no catálogo e comparação normalizada
+
+**Decisão (humano, adendo da Tarefa 4).** Catálogo ganha `architecture`
+(opcional, nullable) = `model_type` do config.json (VLM:
+`text_config.model_type`). Dado de API que não torna o modelo incompleto.
+O bench grava `general.architecture` do GGUF/Ollama ("qwen3moe") e o HF usa
+`model_type` ("qwen3_moe"): a comparação é feita em minúsculas, sem "_" e
+"-". Arquitetura null em qualquer lado = diferente (não sobe para high).

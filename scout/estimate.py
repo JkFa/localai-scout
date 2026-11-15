@@ -177,3 +177,18 @@ def tokens_per_s(
     if t <= 0:
         return None
     return 1 / t
+
+
+def segment_seconds(bytes_read: int, bw: int | None, eta: float,
+                    cal_bw: int | None = None, cal_overhead_s: float = 0.0) -> float | None:
+    """Tempo por token de um trecho (pool) do decode.
+
+    Com calibração do pool (schemas/bench_spec.md): bytes / banda_calibrada +
+    overhead_fixo, sem eta. Sem calibração: bytes / (bw * eta), como em
+    tokens_per_s. None se faltar a banda.
+    """
+    if cal_bw is not None:
+        return bytes_read / cal_bw + cal_overhead_s
+    if bw is None:
+        return None
+    return bytes_read / (bw * eta)

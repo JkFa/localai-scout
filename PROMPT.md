@@ -161,13 +161,33 @@ Throughput, somando os dois trechos:
         + (bytes_camada * (n_layers - n_gpu)) / (bw_cpu * eta_cpu)
   tokens_per_s = 1 / t_tok
 
-eta_gpu = 0.75 e eta_cpu = 0.60 são empíricos: coloque-os em data/tuning.json
-para que o estágio 5 os recalibre por máquina, nunca fixos no código. Reporte
+eta_gpu = 0.75 e eta_cpu = 0.60 são empíricos: ficam em data/tuning.json, nunca
+fixos no código, e são só o chute inicial; o bench nunca os altera (M4). Reporte
 ttft_s_est separado de tokens_per_s_est: prefill é limitado por computação e
 decode por banda de memória, e o usuário sente os dois de formas diferentes.
 
+Calibração medida (scout bench, M4; schemas/bench_spec.md). Se
+tuning.calibration.<pool> existe, o trecho daquele pool troca bytes/(bw × eta)
+por
+
+  t_trecho = bytes_trecho / calibration.bandwidth_bytes_per_s
+           + calibration.overhead_s_per_token
+
+com bytes_trecho = bytes_camada_lidos × camadas do trecho (MoE com a fração
+ativa). Trecho de pool sem calibração continua com bw × eta. Num híbrido com os
+dois pools calibrados, cada trecho soma o seu overhead inteiro. O candidato
+registra tokens_per_s_basis: calibration (todos os trechos com camadas
+calibrados; proveniência calculated), eta (nenhum) ou mixed (um de cada;
+proveniência estimated). Sem calibração, nada muda. O estado de energia ATUAL
+(mesma leitura do bench) é passado ao solver e ecoado em inputs.power só quando
+há calibração. (DECISIONS.md, "consumo da calibração no plan".)
+
 Enquanto não houver fórmula de prefill nem medição, ttft_s_est = null com o
-motivo ttft_unspecified (DECISIONS.md A17).
+motivo ttft_unspecified (DECISIONS.md A17). Exceção: com intent.prompt_tokens
+(--prompt-tokens), placement de um pool só (gpu_full ou cpu_only), calibração
+desse pool com prefill_tokens_per_s e medida com UM modelo que é o próprio
+candidato, ttft_s_est = prompt_tokens / prefill_tokens_per_s (proveniência
+calculated). Prefill escala com o modelo: o número de outro modelo não vale.
 
 Embeddings não fazem decode autoregressivo: esta fórmula não se aplica. Modelo
 cuja única tarefa avaliada é embeddings sai com tokens_per_s_est = null, nota
@@ -183,8 +203,10 @@ MEDIÇÃO em data/tuning.json, bloco prefill_reference {tokens_per_s,
 measured_on, tool, date, power}, nunca de literal no código: a mensagem cita
 ~round(tokens_per_s) tokens/s na máquina medida e "um prompt de N tokens leva
 perto de um minuto", com N = tokens_per_s * 60 em 2 algarismos
-significativos. Sem o bloco, o aviso sai sem número. O bloco é ecoado em
-inputs.tuning.prefill_reference. Se falta a banda de um trecho que
+significativos. Se tuning.calibration.cpu tem prefill_tokens_per_s (medido
+nesta máquina pelo bench), a mensagem cita essa medição, com os modelos
+medidos, no lugar da referência. Sem nenhum dos dois, o aviso sai sem número.
+O bloco é ecoado em inputs.tuning.prefill_reference. Se falta a banda de um trecho que
 tem camadas, tokens_per_s_est = null (DECISIONS.md Q5). No JSON,
 tokens_per_s_est sai arredondado em 2 casas; se o arredondamento der 0, sai o
 valor cru (código da Fase 1; sem entrada própria em DECISIONS.md).
@@ -297,8 +319,17 @@ própria em DECISIONS.md). rejected[].provenance.missing_bytes é estimated se
 closest usou pesos por fallback, senão calculated (DECISIONS.md F7).
 
 Confiança do candidato: low se usou pesos por fallback ou se algum pool usado
-tem dado de hardware com confidence low; senão medium se eta é default, se a
-banda de um trecho com camadas é estimada ou se tokens/s é null; senão high.
+tem dado de hardware com confidence low; senão medium se algum trecho com
+camadas usa eta (eta_default: sem calibração, tokens/s nunca passa de medium),
+se a banda de um trecho por eta é estimada, se tokens/s é null, ou, num trecho
+calibrado, se a calibração tem stable=false (calibration_unstable), se o estado
+de energia atual é desconhecido (calibration_power_unknown) ou se o modelo não
+é um dos medidos e sua arquitetura não casa com nenhuma da calibração
+(calibration_other_arch); senão high. Arquiteturas comparadas em minúsculas e
+sem "_" e "-" ("qwen3_moe" = "qwen3moe"); null em qualquer lado = diferente.
+Estado de energia atual diferente do da calibração (on_ac ou profile): aviso
+calibration_power_mismatch e a confiança cai um nível (high -> medium ->
+low).
 Motivos em confidence_reasons, em ordem alfabética (código da Fase 1; sem
 entrada própria em DECISIONS.md). Proveniência de cada número: a pior entre
 as entradas, em provenance (DECISIONS.md, "Proveniência por número").
@@ -368,6 +399,9 @@ Mapeie do config.json, sem adivinhar nada:
   num_experts, n_routed_experts ou num_local_experts > 1 -> é MoE; calcule
                               params_active (fórmula abaixo)
   kv_lora_rank presente    -> kv_model = "mla"
+  model_type               -> architecture (ausente: null, SEM tornar o
+                              modelo incompleto; serve só para casar com a
+                              calibração do bench)
 
 VLM: se config.json tem text_config, TODOS os campos acima vêm só de
 text_config; campo ausente lá fica null, nunca o do nível de cima (que é do
@@ -443,16 +477,36 @@ recorte do catálogo com os modelos citados) e preenche prompts/consultant.md.
 Por padrão apenas imprime o prompt montado. Com --call e ANTHROPIC_API_KEY no
 ambiente, faz POST via urllib. Falhe alto se feasibility.json não existir.
 
-bench.py gera o comando por candidato:
+bench.py mede, não calibra eta. Calibra o tempo por token na carga real:
 
-  llama-bench -m <arquivo> -p 512 -n 128 -ngl <n_gpu_layers> -t <cores_perf>
+  t_por_token = bytes_por_token / banda_efetiva + overhead_fixo
 
-Com --run, execute SOMENTE se o binário estiver no PATH e o arquivo do modelo
-existir em disco; caso contrário imprima o comando e diga o que falta. Parseie
-a saída, grave measured.json e atualize data/tuning.json:
+`bytes_por_token` é o do solver (pesos x fração ativa, só o trecho do pool). O eta
+de data/tuning.json é só chute inicial antes da primeira calibração e nunca é
+alterado pelo bench.
 
-  eta_novo = eta_atual * (tokens_medidos / tokens_estimados)
-  limitado ao intervalo [0.30, 1.00]
+  scout bench --model <id> [--model <id> ...] [--ollama-model <nome>]... [--run]
+
+Sem --run só imprime o comando e o que falta. Ferramenta: llama-bench
+(-p 512 -n 128 -ngl <n_gpu_layers> -t <cores_perf>) se o binário estiver no PATH
+e o GGUF existir em disco (--gguf); senão a API local do Ollama (127.0.0.1:11434),
+com a quant conferida pelo tamanho do blob contra file_bytes do catálogo (±1 MiB;
+não casa = recusa sem medir). A medição usa a quant, o n_gpu_layers, o contexto e
+as threads que o plan recomendou. Prompt canônico em prompts/bench_prompt.txt,
+128 tokens gerados, temperatura 0, semente fixa, prefixo variável por rodada.
+
+Estabilização: 1 aquecimento descartado; rodadas até as duas últimas ficarem a até
+5% uma da outra (decode e, separadamente, prefill); teto de 6. Todas as rodadas vão
+para measured.json, marcando as duas que entraram na conta. Não estabilizou em 6:
+stable=false, confiança rebaixada e o prefill fica null. O estado de energia (tomada
+ou bateria, perfil) é lido na hora; na bateria há aviso alto.
+
+Calibração, por pool (data/tuning.json, calibration.<pool>): com >= 2 modelos de
+tamanhos diferentes, mínimos quadrados em t = bytes/banda + overhead; se o overhead
+for negativo ou < 5% do tempo por token do menor modelo, refaz com um parâmetro
+(banda = média de bytes x tok/s ponderada pelos bytes), overhead = 0. Com 1 modelo,
+um parâmetro. Grava forma (1p/2p), os dois valores, estável, energia, ferramenta,
+modelos, data e prefill. Só escreve após --run bem-sucedido.
 
 ---
 

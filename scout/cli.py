@@ -53,8 +53,11 @@ def _parse_tasks(arg: str | None, catalog: dict) -> tuple[str, ...]:
     return tuple(t for t in TASKS if t in wanted)
 
 
-def _fmt_tps(x: float | None) -> str:
-    return "?" if x is None else f"~{x:.2f}"  # tokens/s é sempre estimado
+def _fmt_tps(x: float | None, prov: dict | None = None) -> str:
+    """tokens/s com ~ salvo quando vem de calibração medida (proveniência calculated)."""
+    if x is None:
+        return "?"
+    return ("" if (prov or {}).get("tokens_per_s_est") == "calculated" else "~") + f"{x:.2f}"
 
 
 def _est(text: str, prov: dict, field: str) -> str:
@@ -110,6 +113,12 @@ def render_markdown(f: dict) -> str:
             if c["primary_for"]:
                 notes.append("principal: " + ", ".join(c["primary_for"]))
             notes += [n["message"] for n in c.get("notes", [])]
+            if c.get("tokens_per_s_basis") == "calibration":
+                notes.append("tokens/s pela calibração desta máquina (scout bench)")
+            elif c.get("tokens_per_s_basis") == "mixed":
+                notes.append("tokens/s: um trecho calibrado, outro por eta")
+            if c["ttft_s_est"] is not None:
+                notes.append(f"tempo até o primeiro token: {c['ttft_s_est']:.2f} s")
             if "ctx_effective" in c:
                 notes.append(f"contexto efetivo: {c['ctx_effective']} tokens")
             if c["blocked"]:
@@ -118,7 +127,7 @@ def render_markdown(f: dict) -> str:
                 f"| [{c['model']['id']}]({c['model']['source_url']}) | {q['format']} {q['name']} "
                 f"| {c['placement']} | {c['n_gpu_layers']}/{c['model']['n_layers']} "
                 f"| {_warn(_est(fmt_gb(c['total_bytes']), c['provenance'], 'total_bytes'), c)} | {c['tier']} "
-                f"| {'—' if 'decode_not_applicable' in c['confidence_reasons'] else _warn(_fmt_tps(c['tokens_per_s_est']), c)} "
+                f"| {'—' if 'decode_not_applicable' in c['confidence_reasons'] else _warn(_fmt_tps(c['tokens_per_s_est'], c['provenance']), c)} "
                 f"| {c['confidence']} | {'; '.join(notes)} |")
         lines += ["", "Memória por pool:", ""]
         pool_prov = {p["id"]: p["provenance"] for p in f["pools"]}
@@ -153,9 +162,19 @@ def load_tuning(path: Path | None = None) -> dict:
     return tuning
 
 
-def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, intent: Intent) -> dict:
-    """solve + identificação do catálogo pelos bytes exatos do arquivo lido (schema)."""
-    result = solve(system, catalog, intent, tuning)
+def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, intent: Intent,
+             power: dict | None = None) -> dict:
+    """solve + identificação do catálogo pelos bytes exatos do arquivo lido (schema).
+
+    Com calibração no tuning, lê o estado de energia ATUAL (mesma regra do
+    bench) para o solver comparar com o da calibração. Sem calibração não lê
+    nada, e a saída não depende do estado da máquina.
+    """
+    if power is None and tuning.get("calibration"):
+        from scout.bench import read_power
+
+        power = read_power()
+    result = solve(system, catalog, intent, tuning, power)
     result["inputs"]["catalog"]["sha256"] = hashlib.sha256(catalog_raw).hexdigest()
     return result
 
@@ -166,7 +185,10 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     tuning = load_tuning(Path(args.tuning))
     if args.ctx < 1:
         raise InputError("--ctx precisa ser >= 1")
-    intent = Intent(tasks=_parse_tasks(args.task, catalog), ctx=args.ctx, commercial_use=args.commercial)
+    if args.prompt_tokens is not None and args.prompt_tokens < 1:
+        raise InputError("--prompt-tokens precisa ser >= 1")
+    intent = Intent(tasks=_parse_tasks(args.task, catalog), ctx=args.ctx, commercial_use=args.commercial,
+                    prompt_tokens=args.prompt_tokens)
     try:
         result = run_plan(system, catalog, catalog_raw, tuning, intent)
     except ValueError as e:
@@ -309,6 +331,76 @@ def _cmd_catalog_check(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+def _cmd_bench(args: argparse.Namespace) -> int:
+    from scout import bench as B
+
+    system, _ = _read_json(Path(args.system), "system")
+    catalog, _ = _read_json(Path(args.catalog), "catalog")
+    tuning_path = Path(args.tuning)
+    tuning = load_tuning(tuning_path)
+    models = args.model
+    if not models:
+        raise InputError("informe ao menos um --model <id>")
+    pair = lambda xs, i: xs[i] if i < len(xs) else None  # noqa: E731
+    plans = []
+    for i, mid in enumerate(models):
+        try:
+            target = B.build_target(system, catalog, mid, args.ctx, tuning)
+        except B.BenchError as e:
+            raise InputError(str(e)) from e
+        gguf, om = pair(args.gguf, i), pair(args.ollama_model, i)
+        tool, missing = B.choose_tool(gguf, om)
+        plans.append((target, gguf, om, tool, missing))
+    if not args.run:
+        for target, gguf, om, tool, missing in plans:
+            sys.stdout.write(f"{target.model_id} ({target.quant}, ngl {target.n_gpu_layers}, ctx {target.ctx}, "
+                             f"threads {target.threads}, pool {target.pool})\n")
+            if tool == "llama-bench":
+                sys.stdout.write("  " + " ".join(B.llama_bench_cmd(gguf, target.n_gpu_layers, target.threads)) + "\n")
+            elif tool == "ollama":
+                sys.stdout.write(f"  API local do Ollama, modelo {om} (quant conferida pelo tamanho do blob)\n")
+            for m in missing:
+                sys.stdout.write(f"  falta: {m}\n")
+        sys.stdout.write("Nada foi medido. Use --run para medir e gravar a calibração.\n")
+        return 0
+    power = B.read_power()
+    if power["on_ac"] is False:
+        sys.stderr.write("scout: AVISO: máquina NA BATERIA. A medição reflete a bateria e a calibração "
+                         "só vale nesse estado de energia.\n")
+    results, failed = [], False
+    for target, gguf, om, tool, missing in plans:
+        if tool is None:
+            sys.stderr.write(f"scout: {target.model_id}: não medido ({'; '.join(missing)})\n")
+            failed = True
+            continue
+        try:
+            r = B.measure_model(target, tool, gguf, om, power)
+        except B.BenchError as e:
+            sys.stderr.write(f"scout: {target.model_id}: não medido ({e})\n")
+            failed = True
+            continue
+        results.append(r)
+        sys.stdout.write(f"{r['model_id']} [{tool}]: decode {r['decode_tps']:.2f} tok/s, banda efetiva "
+                         f"{r['effective_bandwidth_bytes_per_s'] / 1e9:.1f} GB/s, "
+                         f"{'estável' if r['stable'] else 'NÃO ESTABILIZOU em 6 rodadas (confiança rebaixada)'}\n")
+        if r["prefill_stable"] is False:
+            sys.stdout.write("  prefill NÃO estabilizou: não entra na calibração\n")
+    doc = {"schema_version": 1, "kind": "measured", "scout_version": __version__, "power": power,
+           "on_battery_warning": power["on_ac"] is False, "models": results}
+    Path(args.out).write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    sys.stdout.write(f"medições gravadas em {args.out}\n")
+    if failed or not results:
+        sys.stderr.write("scout: medição incompleta: calibração NÃO gravada\n")
+        return 1
+    cal = B.build_calibration(results, results[0]["measured_at"][:10])
+    B.write_calibration(tuning_path, cal)
+    for pool, c in sorted(cal.items()):
+        sys.stdout.write(f"calibração {pool}: banda {c['bandwidth_bytes_per_s'] / 1e9:.1f} GB/s, overhead "
+                         f"{c['overhead_s_per_token']:.4f} s/token, forma {c['form']}, "
+                         f"{'estável' if c['stable'] else 'não estável'} -> {tuning_path}\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scout", description="Recomenda modelos de IA locais que cabem nesta máquina.")
     parser.add_argument("--version", action="version", version=f"scout {__version__}")
@@ -322,12 +414,26 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--offline", action="store_true", help="sem efeito: plan nunca usa a rede")
     plan.add_argument("--json", action="store_true", help="imprime feasibility.json")
     plan.add_argument("--tuning", default=str(TUNING_PATH), help="constantes empíricas (eta, max_bpw_offload)")
+    plan.add_argument("--prompt-tokens", type=int, default=None,
+                      help="tamanho do prompt em tokens; com prefill calibrado, estima o tempo até o 1º token")
     plan.set_defaults(func=_cmd_plan)
     col = sub.add_parser("collect", help="lê o hardware desta máquina e grava system.json")
     col.add_argument("--out", default="system.json", help="arquivo de saída ('-' imprime no stdout)")
     col.add_argument("--dmidecode", default=None, metavar="ARQUIVO",
                      help="saída de `sudo dmidecode -t memory` gerada por você (tipo, MT/s e canais da RAM)")
     col.set_defaults(func=_cmd_collect)
+    ben = sub.add_parser("bench", help="mede velocidade real e calibra a banda efetiva (sem --run só mostra o plano)")
+    ben.add_argument("--model", action="append", default=[], help="id do catálogo (repetível)")
+    ben.add_argument("--ollama-model", action="append", default=[], help="nome no Ollama, pareado com --model na ordem")
+    ben.add_argument("--gguf", action="append", default=[], help="arquivo GGUF p/ llama-bench, pareado com --model na ordem")
+    ben.add_argument("--run", action="store_true", help="executa a medição e grava a calibração")
+    ben.add_argument("--ctx", type=int, default=8192, help="contexto em tokens")
+    ben.add_argument("--system", default="system.json")
+    ben.add_argument("--catalog", default=str(CATALOG_DEFAULT))
+    ben.add_argument("--tuning", default=str(TUNING_PATH))
+    ben.add_argument("--out", default="measured.json")
+    ben.set_defaults(func=_cmd_bench)
+
     srv = sub.add_parser("serve", help="backend local para o frontend (só 127.0.0.1, com token)")
     srv.add_argument("--port", type=int, default=8765, help="porta em 127.0.0.1 (padrão 8765; falha se ocupada)")
     srv.add_argument("--catalog", default=str(CATALOG_DEFAULT), help="catálogo de modelos")
