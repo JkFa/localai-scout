@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localai-scout"
+version = "0.1.0"
+description = "Lê o hardware da máquina e recomenda modelos de IA locais que de fato rodam nela."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "jsonschema"]
+
+[project.scripts]
+scout = "scout.cli:main"
+
+[tool.setuptools]
+packages = ["scout"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

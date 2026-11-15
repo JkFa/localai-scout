@@ -316,3 +316,25 @@ apareçam por acidente.
 7. **Q7 — 50%.** No pool unificado o orçamento é 50% da RAM total.
 8. **Q8 — aprovado.** STT/VLM/embeddings podem ficar `complete:false` até haver
    mapeamento próprio em M3.
+
+## 2026-11-15 — formatos GPU-only rejeitados em memória unificada
+
+**Contexto.** PROMPT.md exige residência total na VRAM para EXL2/AWQ/GPTQ, mas
+não diz o que fazer no pool unificado (Apple Silicon), onde esses formatos não
+têm backend.
+
+**Decisão (humano).** No pool `unified` esses formatos NÃO contam como
+residentes na GPU. Cada quant EXL2/AWQ/GPTQ é pulada com
+`skipped_quants[].reason_code = "no_gpu_for_format"`; se o modelo ficar sem
+candidato só por isso, o `rejected` usa `reason_code: "no_gpu_for_format"`,
+`closest: null`, `missing_bytes: null`. Código já existente no enum do schema;
+nenhuma mudança em `schemas/`.
+
+**Consequência.** Modelo só com quants GPU-only nunca é recomendado em Mac,
+mesmo que coubesse na memória unificada.
+
+## 2026-11-15 — A17–A23 aprovadas
+
+As propostas A17 a A23 (ttft null, tier do híbrido pelo pior pool, fração
+ativa do MoE nos dois trechos, aritmética inteira, campo de hardware null)
+foram aprovadas pelo humano como estão e valem para o M1.
