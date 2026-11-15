@@ -19,6 +19,7 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from scout import __version__
+from scout.calibration import CalibrationInput
 from scout.cli import _parse_tasks, _read_json, load_tuning, run_plan
 from scout.solver import TASKS, Intent
 
@@ -57,8 +58,10 @@ class ScoutServer(ThreadingHTTPServer):
     def __init__(self, port: int, token: str, catalog_path: Path,
                  origins: frozenset[str] | None = None,
                  collect_fn: Callable[[], dict] | None = None,
-                 tuning_path: Path | None = None) -> None:
+                 tuning_path: Path | None = None,
+                 calibration: CalibrationInput | None = None) -> None:
         self.token = token
+        self.calibration = calibration  # lido uma vez na partida; energia e motor, a cada /plan
         self.origins = allowed_origins() if origins is None else origins
         self.catalog, self.catalog_raw = _read_json(catalog_path, "catalog")
         self.tuning = load_tuning(tuning_path)
@@ -233,7 +236,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(system, dict) or system.get("kind") != "system" or system.get("schema_version") != 1:
             raise ApiError("schema_invalid", "system deve ser um system.json (kind=system, schema_version=1)")
         try:
-            return run_plan(system, srv.catalog, srv.catalog_raw, srv.tuning, intent)
+            return run_plan(system, srv.catalog, srv.catalog_raw, srv.tuning, intent, calibration=srv.calibration)
         except ValueError as e:
             raise ApiError("schema_invalid", str(e)[:400] or "intent inválido") from None
         except (KeyError, TypeError, AttributeError, IndexError):
@@ -257,9 +260,10 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write(f"scout: {self.command} {urlsplit(self.path).path} -> {args[1] if len(args) > 1 else '-'}\n")
 
 
-def serve(port: int, catalog_path: Path, tuning_path: Path | None = None) -> int:
+def serve(port: int, catalog_path: Path, tuning_path: Path | None = None,
+          calibration: CalibrationInput | None = None) -> int:
     token = secrets.token_urlsafe(32)
-    httpd = ScoutServer(port, token, catalog_path, tuning_path=tuning_path)  # OSError se a porta estiver ocupada
+    httpd = ScoutServer(port, token, catalog_path, tuning_path=tuning_path, calibration=calibration)  # OSError se a porta estiver ocupada
     sys.stdout.write(
         f"scout serve em http://127.0.0.1:{httpd.port} (Ctrl+C encerra)\n\n"
         f"Token (muda a cada start): {token}\n"

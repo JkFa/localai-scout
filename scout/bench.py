@@ -1,7 +1,7 @@
 """scout bench: mede decode/prefill reais e calibra banda efetiva + overhead por pool.
 
 Princípio (schemas/bench_spec.md): t_por_token = bytes_por_token / banda_efetiva + overhead_fixo.
-Nunca altera eta_gpu/eta_cpu. A única rede aqui é a API LOCAL do Ollama (127.0.0.1:11434).
+Nunca altera eta_gpu/eta_cpu nem data/tuning.json (a gravação é de scout.calstore). A única rede aqui é a API LOCAL do Ollama (127.0.0.1:11434).
 O ajuste e o parsing são funções puras; I/O passa por `_exec` e `_ollama_request`.
 """
 
@@ -22,6 +22,7 @@ from typing import Any, Callable
 from scout import __version__
 from scout import collect as C
 from scout import estimate as E
+from scout.calibration import normalize_power
 from scout.solver import TASKS, Intent, solve
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -99,21 +100,101 @@ def build_target(system: dict, catalog: dict, model_id: str, ctx: int, tuning: d
 # ------------------------------------------------------------ energia
 
 
-def read_power() -> dict:
-    """Estado de energia NO MOMENTO da medição. on_ac/profile None quando não legíveis."""
+def decide_power(bat_present: bool | None, on_battery: bool | None, profile: str | None,
+                 profile_capable: bool | None) -> dict:
+    """Decisão pura (calibration_store_spec.md §4) sobre o que foi observado. None = não observado.
+    Não aplicável exige evidência positiva: sem bateria (bat_present False) ou sem nenhuma fonte de
+    perfil (profile_capable False). Qualquer outra falta de leitura é desconhecido (null fora da lista)."""
+    na: list[str] = []
+    on_ac: bool | None = None
+    if bat_present is False:
+        na.append("on_ac")
+    elif bat_present is True and on_battery is not None:
+        on_ac = not on_battery
+    prof: str | None = None
+    if profile_capable is False:
+        na.append("profile")
+    elif profile:
+        prof = profile
+    return {"on_ac": on_ac, "profile": prof, "not_applicable": na}
+
+
+def _read_power_linux(sysfs: str, which: Callable[[str], str | None]) -> dict:
     probes = C.Probes()
-    system = {"Linux": "linux", "Darwin": "darwin", "Windows": "windows"}.get(platform.system(), "other")
-    pw = C.collect_power(system, probes)
-    ob = pw["on_battery"]["value"]
-    profile = None
-    txt = C.read_text("/sys/firmware/acpi/platform_profile", probes, "platform_profile", limit=64)
-    if txt and txt.strip():
-        profile = txt.strip()
-    else:
+    root = f"{sysfs}/class/power_supply"
+    bat_present: bool | None = None
+    on_battery: bool | None = None
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        names = None  # não deu para listar: desconhecido, não "sem bateria"
+    if names is not None:
+        bat_present = any(n.startswith("BAT") for n in names)
+        if bat_present:
+            sup: list[dict[str, str | None]] = []
+            for n in names:
+                d: dict[str, str | None] = {}
+                for k in ("type", "status", "online", "scope"):
+                    txt = C.read_text(f"{root}/{n}/{k}", probes, limit=32)
+                    d[k] = txt.strip() if txt is not None else None
+                sup.append(d)
+            on_battery = C.P.parse_power(sup)[1]
+    pp_path = f"{sysfs}/firmware/acpi/platform_profile"
+    has_file = os.path.exists(pp_path)
+    has_daemon = which("powerprofilesctl") is not None
+    profile: str | None = None
+    if has_file:
+        txt = C.read_text(pp_path, probes, limit=64)
+        profile = txt.strip() if txt and txt.strip() else None
+    if profile is None and has_daemon:
         out = C.run_cmd(["powerprofilesctl", "get"], probes, timeout=3.0)
-        if out and out.strip():
-            profile = out.strip()
-    return {"on_ac": None if ob is None else (not ob), "profile": profile}
+        profile = out.strip() if out and out.strip() else None
+    return decide_power(bat_present, on_battery, profile, has_file or has_daemon)
+
+
+def read_power(sysfs: str = "/sys", which: Callable[[str], str | None] = shutil.which) -> dict:
+    """Estado de energia NO MOMENTO da medição: {on_ac, profile, not_applicable}. Nunca levanta.
+    Linux lê /sys; darwin lê só a bateria (pmset); demais plataformas: tudo desconhecido."""
+    try:
+        system = {"Linux": "linux", "Darwin": "darwin", "Windows": "windows"}.get(platform.system(), "other")
+        if system == "linux":
+            return _read_power_linux(sysfs, which)
+        if system == "darwin":
+            pw = C.collect_power(system, C.Probes())
+            has, ob = pw["has_battery"]["value"], pw["on_battery"]["value"]
+            return decide_power(has, ob, None, None)
+    except Exception:  # noqa: BLE001 - leitura de energia nunca derruba a CLI
+        pass
+    return decide_power(None, None, None, None)
+
+
+# ------------------------------------------------------------ versão do motor
+
+
+def engine_version(tool: str) -> str | None:
+    """ÚNICA fonte da versão do motor (bench grava, plan lê). None em qualquer falha."""
+    try:
+        if tool == "ollama":
+            v = _ollama_request("GET", "/api/version", timeout=2.0).get("version")
+            return v.strip() if isinstance(v, str) and v.strip() else None
+        if tool == "llama-bench":
+            cp = subprocess.run(["llama-bench", "--version"], capture_output=True, text=True, errors="replace",
+                                timeout=3.0, check=True, stdin=subprocess.DEVNULL)
+            for blob in (cp.stdout, cp.stderr):  # llama.cpp costuma imprimir versão em stderr
+                for line in blob.splitlines():
+                    if line.strip():
+                        return line.strip()
+    except Exception:  # noqa: BLE001 - ausente, travado, sem permissão, rede caída: tudo vira None
+        return None
+    return None
+
+
+def live_system() -> dict | None:
+    """Leitura ao vivo sem privilégio (sem dmidecode), para conferir o --system. None se falhar."""
+    try:
+        return C.collect()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # ------------------------------------------------------------ estabilização (pura)
@@ -213,7 +294,8 @@ def build_calibration(results: list[dict], date: str) -> dict[str, dict]:
     for pool, rs in sorted(by_pool.items()):
         fit = fit_calibration([(r["bytes_per_token"], r["decode_tps"]) for r in rs])
         powers = {json.dumps(r["power"], sort_keys=True) for r in rs}
-        power = rs[0]["power"] if len(powers) == 1 else {"on_ac": None, "profile": None}
+        power = normalize_power(rs[0]["power"]) if len(powers) == 1 else normalize_power(None)
+        versions = {r.get("tool_version") for r in rs}
         prefills = [r["prefill_tps"] for r in rs]
         if all(p is not None for p in prefills):
             prefill, reason = sum(prefills) / len(prefills), None
@@ -223,20 +305,12 @@ def build_calibration(results: list[dict], date: str) -> dict[str, dict]:
             "bandwidth_bytes_per_s": fit["bandwidth_bytes_per_s"], "overhead_s_per_token": fit["overhead_s_per_token"],
             "form": fit["form"], "stable": all(r["stable"] for r in rs), "power": power,
             "tool": "+".join(sorted({r["tool"] for r in rs})),
+            "tool_version": next(iter(versions)) if len(versions) == 1 else None,
             "models": [{"id": r["model_id"], "architecture": r["architecture"], "bytes": r["bytes_per_token"]} for r in rs],
             "date": date, "prefill_tokens_per_s": prefill, "prefill_reason": reason,
             "fit": {"two_param": fit["two_param"], "one_param": fit["one_param"], "discard_reason": fit["discard_reason"]},
         }
     return out
-
-
-def write_calibration(tuning_path: Path, calibrations: dict[str, dict]) -> None:
-    """Grava só `calibration.<pool>`; eta_gpu/eta_cpu e o resto ficam intactos."""
-    tuning = json.loads(tuning_path.read_text(encoding="utf-8"))
-    cal = dict(tuning.get("calibration") or {})
-    cal.update(calibrations)
-    tuning["calibration"] = cal
-    tuning_path.write_text(json.dumps(tuning, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 # ------------------------------------------------------------ ferramentas (I/O isolado)
@@ -310,7 +384,7 @@ def _ollama_request(method: str, path: str, body: dict | None = None, timeout: f
 
 
 def ollama_check_quant(name: str, target: Target) -> dict:
-    """Confere o blob com o file_bytes do catálogo (±1 MiB). Devolve {architecture, version}."""
+    """Confere o blob com o file_bytes do catálogo (±1 MiB). Devolve {architecture}."""
     tags = _ollama_request("GET", "/api/tags", timeout=10.0)
     entry = next((m for m in tags.get("models", []) if name in (m.get("name"), m.get("model"))), None)
     if entry is None:
@@ -325,8 +399,7 @@ def ollama_check_quant(name: str, target: Target) -> dict:
         arch = info.get("general.architecture")
     except BenchError:
         pass
-    ver = _ollama_request("GET", "/api/version", timeout=10.0).get("version")
-    return {"architecture": arch, "version": ver}
+    return {"architecture": arch}
 
 
 def load_prompt() -> str:
@@ -369,25 +442,19 @@ def choose_tool(gguf: str | None, ollama_model: str | None) -> tuple[str | None,
 
 def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str | None,
                   power: dict, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> dict:
-    version: str | None = None
     arch: str | None = None
     if tool == "ollama":
         assert ollama_model
-        meta = ollama_check_quant(ollama_model, target)
-        arch, version = meta["architecture"], meta["version"]
+        arch = ollama_check_quant(ollama_model, target)["architecture"]
         prompt = load_prompt()
         fn: Callable[[int], Round] = lambda n: ollama_round(ollama_model, target, prompt, n)
     else:
         assert gguf
-        holder: dict[str, str | None] = {"v": None}
 
         def fn(n: int) -> Round:
-            r, v = llama_bench_round(gguf, target)
-            holder["v"] = v
-            return r
+            return llama_bench_round(gguf, target)[0]
     res = stabilize(fn)
-    if tool == "llama-bench":
-        version = holder["v"]
+    version = engine_version(tool)
     bw = int(round(target.bytes_per_token * res["decode_tps"]))
     return {
         "model_id": target.model_id, "tool": tool, "tool_version": version,

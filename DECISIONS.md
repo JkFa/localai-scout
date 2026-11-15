@@ -758,3 +758,21 @@ bench mediu 15,0 GB/s e marcou `stable`: pressão de memória ainda não é conf
   medição da bateria).
 - O pool gpu não confere a configuração de RAM, nem numa iGPU.
 - Um bench rodado durante o `serve` só vale depois de reiniciá-lo.
+
+## Tarefa 5, parte do `coletor`: armazenamento, energia e motor (sonnet/medium)
+- `llama-bench --version`: NÃO verificado. `llama-bench` não está no PATH desta máquina (`which` vazio), então o
+  formato real e a existência da opção são desconhecidos. `engine_version("llama-bench")` aceita a primeira linha não
+  vazia de stdout ou, se vazio, de stderr (llama.cpp costuma imprimir versão em stderr), e devolve None se a opção não
+  existir (código ≠ 0). Conferir com o binário real antes de confiar na comparação de versão.
+- Layer 2 desconhecido (MT/s ou canais null) NÃO derruba entradas antigas no merge de §6, ao contrário da letra de §6
+  ("different ou unknown"). Motivo: o plan aplica esse caso em medium; derrubar faria uma máquina sem dmidecode
+  legível perder o estado de energia anterior a cada bench, sem nunca acumular entradas. Camada 1 null ou diferente e
+  camada 2 diferente continuam derrubando. Revisar se o humano preferir a letra.
+- Chave de energia no merge: igual pela comparação de §4 OU estados normalizados idênticos (desconhecido nos dois
+  lados também substitui), para a rerodada não duplicar entradas quando a leitura de energia falha igual.
+- `read_power` no linux: `/sys/class/power_supply` ilegível é desconhecido, não "sem bateria". Darwin só marca
+  `on_ac` não aplicável quando o pmset diz que não há bateria; `profile` fora do linux é desconhecido.
+- `build_tool` do bench: `tool_version` vem de `engine_version` (uma chamada após medir), e não mais do JSON do
+  Ollama ou do llama-bench. `ollama_check_quant` devolve só a arquitetura.
+- Bench lê o arquivo existente antes de medir (malformado = erro antes de gastar tempo) e usa a origem `default` na
+  leitura, para `--calibration` apontar para um arquivo novo sem erro.

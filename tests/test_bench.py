@@ -7,12 +7,14 @@ import pytest
 
 from conftest import CATALOG_PATH, FIX, SYSTEM_PATHS, load
 from scout import bench as B
+from scout import calstore
+from scout.calibration import machine_identity
 from scout.cli import main
 
 TUNING = load(FIX / "tuning_test.json")
 SYS = load(SYSTEM_PATHS["ddr5_64"])
 CAT = load(CATALOG_PATH)
-AC = {"on_ac": True, "profile": "performance"}
+AC = {"on_ac": True, "profile": "performance", "not_applicable": []}
 
 
 def target(model_id="test/dense-7b"):
@@ -143,12 +145,12 @@ class FakeOllama:
                 "prompt_eval_count": 532, "prompt_eval_duration": int(532 / pre * 1e9)}
 
 
-def test_ollama_measure_end_to_end(monkeypatch):
+def test_ollama_measure_end_to_end(monkeypatch, fixed_env):
     t = target()
     fake = FakeOllama({"dense:7b": t.file_bytes}, [1.0, 0.8, 0.9, 1.0, 1.01])
     monkeypatch.setattr(B, "_ollama_request", fake)
     r = B.measure_model(t, "ollama", None, "dense:7b", AC, now=lambda: __import__("datetime").datetime(2026, 11, 15))
-    assert r["tool"] == "ollama" and r["tool_version"] == "0.0.test" and r["architecture"] == "qwen3"
+    assert r["tool"] == "ollama" and r["tool_version"] == "9.9.9" and r["architecture"] == "qwen3"
     assert r["stable"] is True and len(r["rounds"]) == 4
     assert r["effective_bandwidth_bytes_per_s"] == round(t.bytes_per_token * r["decode_tps"])
     assert r["prompt_tokens"] == 532 and r["gen_tokens"] == 128 and r["power"] == AC
@@ -225,7 +227,7 @@ def test_choose_tool(monkeypatch, tmp_path):
     assert tool is None and any("PATH" in m for m in missing)
 
 
-def test_llama_bench_measure_uses_plan_parameters(monkeypatch):
+def test_llama_bench_measure_uses_plan_parameters(monkeypatch, fixed_env):
     t = target()
     cmds = []
 
@@ -234,7 +236,7 @@ def test_llama_bench_measure_uses_plan_parameters(monkeypatch):
         return LB
     monkeypatch.setattr(B, "_exec", fake_exec)
     r = B.measure_model(t, "llama-bench", "/x/m.gguf", None, AC)
-    assert r["tool"] == "llama-bench" and r["tool_version"] == "42 (abc123)" and r["stable"] is True
+    assert r["tool"] == "llama-bench" and r["tool_version"] == "b9999" and r["stable"] is True
     c = cmds[0]
     assert c[c.index("-ngl") + 1] == "0" and c[c.index("-t") + 1] == "16" and c[c.index("-n") + 1] == "128"
     assert r["decode_tps"] == 6.25 and r["prompt_tokens"] == 512
@@ -242,16 +244,83 @@ def test_llama_bench_measure_uses_plan_parameters(monkeypatch):
 
 # ---- energia
 
-def test_read_power_battery(monkeypatch):
-    monkeypatch.setattr(B.C, "collect_power", lambda system, probes: {
-        "has_battery": B.C.field(True, "x"), "on_battery": B.C.field(True, "x")})
-    monkeypatch.setattr(B.C, "read_text", lambda path, probes, probe=None, limit=0: "power-saver\n")
-    assert B.read_power() == {"on_ac": False, "profile": "power-saver"}
-    monkeypatch.setattr(B.C, "collect_power", lambda system, probes: {
-        "has_battery": B.C.field(True, "x"), "on_battery": B.C.missing("?")})
-    monkeypatch.setattr(B.C, "read_text", lambda *a, **k: None)
-    monkeypatch.setattr(B.C, "run_cmd", lambda *a, **k: "balanced\n")
-    assert B.read_power() == {"on_ac": None, "profile": "balanced"}
+def test_decide_power_not_applicable_vs_unknown():
+    d = B.decide_power
+    assert d(False, None, None, False) == {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}
+    # com bateria e leitura falhando: desconhecido, NÃO não aplicável
+    assert d(True, None, None, True) == {"on_ac": None, "profile": None, "not_applicable": []}
+    assert d(True, True, "balanced", True) == {"on_ac": False, "profile": "balanced", "not_applicable": []}
+    assert d(False, None, "performance", True) == {"on_ac": None, "profile": "performance", "not_applicable": ["on_ac"]}
+    # nada observado (plataforma sem leitura): tudo desconhecido
+    assert d(None, None, None, None) == {"on_ac": None, "profile": None, "not_applicable": []}
+
+
+def _fake_sys(tmp_path, supplies=(), profile=None):
+    root = tmp_path / "sys"
+    (root / "class" / "power_supply").mkdir(parents=True)
+    for name, attrs in supplies:
+        d = root / "class" / "power_supply" / name
+        d.mkdir()
+        for k, v in attrs.items():
+            (d / k).write_text(v)
+    if profile is not None:
+        (root / "firmware" / "acpi").mkdir(parents=True)
+        (root / "firmware" / "acpi" / "platform_profile").write_text(profile)
+    return str(root)
+
+
+def test_read_power_desktop_has_nothing_applicable(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    root = _fake_sys(tmp_path, [("AC", {"type": "Mains", "online": "1"})])
+    assert B.read_power(root, lambda b: None) == {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}
+
+
+def test_read_power_laptop_battery_and_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    root = _fake_sys(tmp_path, [("BAT0", {"type": "Battery", "status": "Discharging", "scope": "System"}),
+                                ("AC", {"type": "Mains", "online": "0"})], profile="low-power\n")
+    assert B.read_power(root, lambda b: None) == {"on_ac": False, "profile": "low-power", "not_applicable": []}
+
+
+def test_read_power_daemon_present_but_read_fails_is_unknown(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(B.C, "run_cmd", lambda *a, **k: None)  # powerprofilesctl existe e falha
+    root = _fake_sys(tmp_path, [("AC", {"type": "Mains", "online": "1"})])
+    got = B.read_power(root, lambda b: "/usr/bin/powerprofilesctl" if b == "powerprofilesctl" else None)
+    assert got == {"on_ac": None, "profile": None, "not_applicable": ["on_ac"]}
+
+
+def test_read_power_unlistable_sysfs_is_unknown_not_na(monkeypatch, tmp_path):
+    monkeypatch.setattr(B.platform, "system", lambda: "Linux")
+    got = B.read_power(str(tmp_path / "nao-existe"), lambda b: None)
+    assert got["on_ac"] is None and "on_ac" not in got["not_applicable"]
+
+
+def test_read_power_other_platforms_never_crash(monkeypatch):
+    monkeypatch.setattr(B.platform, "system", lambda: "Windows")
+    assert B.read_power() == {"on_ac": None, "profile": None, "not_applicable": []}
+
+
+def test_engine_version_failures_are_none(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("sem rede")
+    monkeypatch.setattr(B.urllib.request, "urlopen", boom)
+    assert B.engine_version("ollama") is None
+    monkeypatch.setattr(B.subprocess, "run", boom)
+    assert B.engine_version("llama-bench") is None
+    assert B.engine_version("outra") is None
+
+
+def test_engine_version_parses(monkeypatch):
+    monkeypatch.setattr(B, "_ollama_request", lambda m, p, body=None, timeout=600.0: {"version": " 1.2.3 "})
+    assert B.engine_version("ollama") == "1.2.3"
+    monkeypatch.setattr(B, "_ollama_request", lambda *a, **k: {"version": 3})
+    assert B.engine_version("ollama") is None
+
+    class CP:
+        stdout, stderr = "", "\nversion: 42 (abc)\nresto\n"
+    monkeypatch.setattr(B.subprocess, "run", lambda *a, **k: CP)
+    assert B.engine_version("llama-bench") == "version: 42 (abc)"
 
 
 # ---- calibração e CLI
@@ -271,18 +340,10 @@ def test_build_calibration_per_pool():
     g = cal["gpu"]
     assert g["stable"] is False and g["prefill_tokens_per_s"] is None and g["prefill_reason"]
     mixed = B.build_calibration([_result("a", 1_000, 5.0), _result("b", 4_000, 1.0, power={"on_ac": False, "profile": None})], "d")
-    assert mixed["cpu"]["power"] == {"on_ac": None, "profile": None}
+    assert mixed["cpu"]["power"] == {"on_ac": None, "profile": None, "not_applicable": []}
 
 
-def test_write_calibration_never_touches_eta(tmp_path):
-    p = tmp_path / "tuning.json"
-    p.write_text(json.dumps(TUNING), encoding="utf-8")
-    B.write_calibration(p, {"cpu": {"bandwidth_bytes_per_s": 1}})
-    out = json.loads(p.read_text(encoding="utf-8"))
-    assert out["eta_gpu"] == TUNING["eta_gpu"] and out["eta_cpu"] == TUNING["eta_cpu"]
-    assert out["max_bpw_offload"] == TUNING["max_bpw_offload"] and out["calibration"]["cpu"] == {"bandwidth_bytes_per_s": 1}
-    B.write_calibration(p, {"gpu": {"bandwidth_bytes_per_s": 2}})
-    assert set(json.loads(p.read_text(encoding="utf-8"))["calibration"]) == {"cpu", "gpu"}
+CAL = "calibration.json"
 
 
 def _cli_setup(monkeypatch, tmp_path, power, delta=0):
@@ -290,46 +351,106 @@ def _cli_setup(monkeypatch, tmp_path, power, delta=0):
     tuning = tmp_path / "tuning.json"
     tuning.write_text(json.dumps(TUNING), encoding="utf-8")
     monkeypatch.setattr(B, "_ollama_request", FakeOllama({"dense:7b": t.file_bytes}, [1.0], blob_delta=delta))
-    monkeypatch.setattr(B, "read_power", lambda: power)
-    return tuning, ["bench", "--model", "test/dense-7b", "--ollama-model", "dense:7b", "--system",
-                    str(SYSTEM_PATHS["ddr5_64"]), "--catalog", str(CATALOG_PATH), "--tuning", str(tuning),
-                    "--out", str(tmp_path / "measured.json")]
+    monkeypatch.setattr(B, "read_power", lambda *a, **k: power)
+    monkeypatch.setattr(B, "engine_version", lambda tool: "9.9.9")
+    monkeypatch.setattr(B, "live_system", lambda: SYS)
+    cal = tmp_path / CAL
+    return tuning, cal, ["bench", "--model", "test/dense-7b", "--ollama-model", "dense:7b", "--system",
+                         str(SYSTEM_PATHS["ddr5_64"]), "--catalog", str(CATALOG_PATH), "--tuning", str(tuning),
+                         "--out", str(tmp_path / "measured.json"), "--calibration", str(cal)]
 
 
 def test_cli_dry_run_measures_nothing_and_writes_nothing(monkeypatch, tmp_path, capsys):
-    tuning, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
     assert main(argv) == 0
     out = capsys.readouterr().out
     assert "Nada foi medido" in out and "dense:7b" in out
-    assert not (tmp_path / "measured.json").exists() and "calibration" not in json.loads(tuning.read_text())
+    assert not (tmp_path / "measured.json").exists() and not cal.exists()
     assert not B._ollama_request.generated
 
 
 def test_cli_run_on_battery_warns_and_records(monkeypatch, tmp_path, capsys):
-    tuning, argv = _cli_setup(monkeypatch, tmp_path, {"on_ac": False, "profile": "power-saver"})
+    bat = {"on_ac": False, "profile": "power-saver", "not_applicable": []}
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, bat)
+    before = tuning.read_bytes()
     assert main(argv + ["--run"]) == 0
     cap = capsys.readouterr()
-    assert "BATERIA" in cap.err
+    assert "BATERIA" in cap.err and str(cal) in cap.out
     doc = json.loads((tmp_path / "measured.json").read_text(encoding="utf-8"))
     assert doc["on_battery_warning"] is True and doc["power"]["profile"] == "power-saver"
     m = doc["models"][0]
-    assert m["quant"] == "Q8_0" and m["rounds"] and m["pool"] == "cpu" and m["on_battery_warning"] is True
-    t = json.loads(tuning.read_text())
-    assert t["calibration"]["cpu"]["power"]["on_ac"] is False and t["calibration"]["cpu"]["form"] == "1p"
-    assert t["eta_cpu"] == TUNING["eta_cpu"]
+    assert m["quant"] == "Q8_0" and m["rounds"] and m["pool"] == "cpu" and m["tool_version"] == "9.9.9"
+    c = json.loads(cal.read_text(encoding="utf-8"))
+    e = c["pools"]["cpu"][0]
+    assert e["power"] == bat and e["form"] == "1p" and e["tool"] == "ollama" and e["tool_version"] == "9.9.9"
+    assert c["machine"] == machine_identity(SYS) and c["calibration_schema_version"] == 1
+    assert tuning.read_bytes() == before  # tuning nunca é gravado
+    assert calstore.validate_doc(c) == []
+
+
+def test_tuning_test_json_bytes_unchanged_by_bench(monkeypatch, tmp_path):
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    fixture_before = (FIX / "tuning_test.json").read_bytes()
+    assert main(argv[:argv.index("--tuning")] + ["--tuning", str(FIX / "tuning_test.json")]
+                + argv[argv.index("--out"):] + ["--run"]) == 0
+    assert (FIX / "tuning_test.json").read_bytes() == fixture_before and cal.exists()
 
 
 def test_cli_quant_mismatch_writes_no_calibration(monkeypatch, tmp_path, capsys):
-    tuning, argv = _cli_setup(monkeypatch, tmp_path, AC, delta=10 * B.MIB)
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC, delta=10 * B.MIB)
     assert main(argv + ["--run"]) == 1
     assert "não casa com Q8_0" in capsys.readouterr().err
-    assert "calibration" not in json.loads(tuning.read_text())
+    assert not cal.exists()
 
 
 def test_cli_run_unstable_is_flagged(monkeypatch, tmp_path, capsys):
-    tuning, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
     monkeypatch.setattr(B, "_ollama_request", FakeOllama({"dense:7b": target().file_bytes}, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]))
     assert main(argv + ["--run"]) == 0
     assert "NÃO ESTABILIZOU" in capsys.readouterr().out
-    c = json.loads(tuning.read_text())["calibration"]["cpu"]
-    assert c["stable"] is False
+    assert json.loads(cal.read_text())["pools"]["cpu"][0]["stable"] is False
+
+
+def test_cli_refuses_incomplete_identity_before_measuring(monkeypatch, tmp_path, capsys):
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    bad = json.loads(json.dumps(SYS))
+    bad["cpu"]["model"] = {"value": None, "source": "x", "confidence": "low"}
+    p = tmp_path / "bad.json"
+    p.write_text(json.dumps(bad))
+    argv[argv.index("--system") + 1] = str(p)
+    assert main(argv + ["--run"]) == 2
+    assert "identity_incomplete" in capsys.readouterr().err
+    assert not B._ollama_request.generated and not cal.exists()
+
+
+def test_cli_refuses_system_from_another_machine(monkeypatch, tmp_path, capsys):
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    other = load(SYSTEM_PATHS["cpu8"])
+    monkeypatch.setattr(B, "live_system", lambda: other)
+    assert main(argv + ["--run"]) == 2
+    assert "system_not_this_machine" in capsys.readouterr().err
+    monkeypatch.setattr(B, "live_system", lambda: None)
+    assert main(argv + ["--run"]) == 2
+    assert not B._ollama_request.generated and not cal.exists()
+
+
+def test_cli_refuses_mixed_tools_in_a_pool(monkeypatch, tmp_path, capsys):
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    g = tmp_path / "m.gguf"
+    g.write_text("x")
+    monkeypatch.setattr(B.shutil, "which", lambda b: "/x/llama-bench")
+    argv += ["--model", "test/moe-30b-a3b", "--ollama-model", "moe:30b", "--gguf", "-", "--gguf", str(g)]
+    # modelo 1: gguf "-" não existe -> ollama; modelo 2: gguf existe -> llama-bench; mesmo pool cpu
+    assert main(argv + ["--run"]) == 2
+    assert "mixed_tools" in capsys.readouterr().err and not B._ollama_request.generated
+
+
+def test_cli_run_merges_into_existing_file(monkeypatch, tmp_path):
+    tuning, cal, argv = _cli_setup(monkeypatch, tmp_path, AC)
+    assert main(argv + ["--run"]) == 0
+    bat = {"on_ac": False, "profile": "balanced", "not_applicable": []}
+    monkeypatch.setattr(B, "read_power", lambda *a, **k: bat)
+    monkeypatch.setattr(B, "_ollama_request", FakeOllama({"dense:7b": target().file_bytes}, [0.5]))
+    assert main(argv + ["--run"]) == 0
+    entries = json.loads(cal.read_text())["pools"]["cpu"]
+    assert [e["power"]["on_ac"] for e in entries] == [True, False]

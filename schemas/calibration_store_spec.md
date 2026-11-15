@@ -275,8 +275,11 @@ desce um nível, com piso `low`: `power_mismatch`, `engine_changed` e
   (`system_not_this_machine`). Kernel, motor e energia nunca impedem a medição.
 - **Merge:** `B.write_calibration` deixa de existir. Na gravação:
   - com `calibration_schema_version` diferente, todos os pools antigos caem;
-  - entradas antigas caem se algum campo de identidade do escopo do pool
-    (camadas 1 e 2) der `different` ou `unknown`; a pilha de software não
+  - entradas antigas caem se algum campo de camada 1 do escopo do pool der
+    `different` ou `unknown`, ou se algum campo de camada 2 der `different`.
+    Camada 2 desconhecida não derruba: o plan a aplica em medium, e derrubar
+    faria uma máquina sem dmidecode legível nunca acumular estados de energia
+    (divergência do `coletor`, aprovada pelo humano). A pilha de software não
     derruba entradas;
   - no pool medido, a entrada com a mesma chave de energia (os dois atributos
     iguais, pela comparação de §4) é substituída; as outras ficam;

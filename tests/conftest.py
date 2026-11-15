@@ -79,3 +79,25 @@ def assert_valid(name: str, doc: dict) -> None:
 
 def deep(doc: dict) -> dict:
     return copy.deepcopy(doc)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_state(tmp_path, monkeypatch):
+    """Nenhum teste enxerga ou grava a calibração/estado reais do usuário."""
+    state = tmp_path / "_state"
+    state.mkdir()
+    monkeypatch.setenv("SCOUT_CALIBRATION", str(state / "calibration.json"))
+    for var in ("HOME", "XDG_STATE_HOME", "LOCALAPPDATA", "USERPROFILE"):
+        monkeypatch.setenv(var, str(state))
+
+
+@pytest.fixture
+def fixed_env(monkeypatch):
+    """read_power e engine_version fixos (sem /sys, sem rede). Devolve o dict mutável de leituras."""
+    from scout import bench
+
+    reading = {"power": {"on_ac": True, "profile": "performance", "not_applicable": []},
+               "versions": {"ollama": "9.9.9", "llama-bench": "b9999"}}
+    monkeypatch.setattr(bench, "read_power", lambda *a, **k: reading["power"])
+    monkeypatch.setattr(bench, "engine_version", lambda tool: reading["versions"].get(tool))
+    return reading

@@ -9,13 +9,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from scout import __version__
 from scout.estimate import fmt_gb, fmt_gbps
-from scout.calibration import CalibrationInput, describe_power
+from scout import calstore
+from scout.calibration import CalibrationInput, describe_power, machine_identity
 from scout.solver import TASKS, Intent, solve
 
 TUNING_PATH = Path(__file__).resolve().parent.parent / "data" / "tuning.json"
@@ -187,7 +189,30 @@ def load_tuning(path: Path | None = None) -> dict:
     tuning, _ = _read_json(path, None)
     if not isinstance(tuning, dict) or "eta_gpu" not in tuning or "eta_cpu" not in tuning:
         raise InputError(f"{path}: faltam eta_gpu/eta_cpu")
+    if "calibration" in tuning:
+        new, _ = calstore.resolve_calibration_path(None, {}, sys.platform, calstore.find_home(os.environ))
+        raise InputError(
+            f"{path}: traz a chave `calibration`, formato antigo sem identidade de hardware, que não é mais "
+            f"lido. A calibração agora vive em {new or 'calibration.json no diretório de estado do usuário'} "
+            "(ou em --calibration / SCOUT_CALIBRATION). Remova a chave do tuning e rode `scout bench --run` de novo.")
     return tuning
+
+
+def resolve_calibration(args: argparse.Namespace, env: dict[str, str] | None = None) -> tuple[Path | None, str]:
+    """--no-calibration -> (None, disabled); senão flag > SCOUT_CALIBRATION > padrão do SO."""
+    if getattr(args, "no_calibration", False):
+        return None, "disabled"
+    env = os.environ if env is None else env
+    return calstore.resolve_calibration_path(getattr(args, "calibration", None), env, sys.platform, calstore.find_home(env))
+
+
+def load_calibration(args: argparse.Namespace) -> CalibrationInput:
+    """Resolve e lê o arquivo. Falha alto se malformado ou ausente com --calibration."""
+    path, origin = resolve_calibration(args)
+    try:
+        return calstore.read_calibration(path, origin)
+    except calstore.CalibrationError as e:
+        raise InputError(str(e)) from e
 
 
 def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, intent: Intent,
@@ -198,13 +223,16 @@ def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, inte
     Com um calibration.json lido, lê o estado de energia ATUAL (mesma regra do
     bench) para o solver comparar com o da calibração. Sem calibração não lê
     nada, e a saída não depende do estado da máquina.
-    PENDENTE (coletor, calibration_store_spec.md §1/§3): resolver e ler o
-    arquivo local e as versões dos motores; até lá os chamadores passam None.
+    O arquivo já vem lido em `calibration` (plan: uma vez; serve: na partida).
+    Só com doc lê a energia e a versão de cada motor das entradas (loopback).
     """
-    if power is None and calibration is not None and calibration.doc is not None:
-        from scout.bench import read_power
+    if calibration is not None and calibration.doc is not None:
+        from scout import bench
 
-        power = read_power()
+        if power is None:
+            power = bench.read_power()
+        if engines is None:
+            engines = {t: bench.engine_version(t) for t in calstore.tools_in(calibration.doc)}
     result = solve(system, catalog, intent, tuning, power, calibration, engines)
     result["inputs"]["catalog"]["sha256"] = hashlib.sha256(catalog_raw).hexdigest()
     return result
@@ -220,8 +248,9 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         raise InputError("--prompt-tokens precisa ser >= 1")
     intent = Intent(tasks=_parse_tasks(args.task, catalog), ctx=args.ctx, commercial_use=args.commercial,
                     prompt_tokens=args.prompt_tokens)
+    calibration = load_calibration(args)
     try:
-        result = run_plan(system, catalog, catalog_raw, tuning, intent)
+        result = run_plan(system, catalog, catalog_raw, tuning, intent, calibration=calibration)
     except ValueError as e:
         raise InputError(str(e)) from e
     if args.json:
@@ -234,8 +263,9 @@ def _cmd_plan(args: argparse.Namespace) -> int:
 def _cmd_serve(args: argparse.Namespace) -> int:
     from scout import server
 
+    calibration = load_calibration(args)
     try:
-        return server.serve(args.port, Path(args.catalog), Path(args.tuning))
+        return server.serve(args.port, Path(args.catalog), Path(args.tuning), calibration)
     except OSError as e:
         raise InputError(f"não foi possível abrir 127.0.0.1:{args.port}: {e.strerror or e}") from e
 
@@ -394,6 +424,23 @@ def _cmd_bench(args: argparse.Namespace) -> int:
                 sys.stdout.write(f"  falta: {m}\n")
         sys.stdout.write("Nada foi medido. Use --run para medir e gravar a calibração.\n")
         return 0
+    cal_path, cal_origin = resolve_calibration(args)
+    if cal_path is None:
+        raise InputError("sem caminho para a calibração (sem home); use --calibration ou SCOUT_CALIBRATION")
+    try:
+        old = calstore.read_calibration(cal_path, "default").doc  # ausente não é erro para quem grava
+    except calstore.CalibrationError as e:
+        raise InputError(str(e)) from e
+    identity = machine_identity(system)
+    pools = {t.pool for t, *_ in plans}
+    bad_pool = calstore.mixed_tools([(t.pool, tool) for t, _, _, tool, _ in plans])
+    if bad_pool:
+        raise InputError(f"mixed_tools: o pool {bad_pool} misturaria ferramentas (ollama e llama-bench) numa "
+                         "entrada; meça cada ferramenta numa rodada separada.")
+    live = B.live_system()
+    refusal = calstore.identity_refusal(identity, machine_identity(live) if live is not None else None, pools)
+    if refusal:
+        raise InputError(f"{refusal[0]}: {refusal[1]}")
     power = B.read_power()
     if power["on_ac"] is False:
         sys.stderr.write("scout: AVISO: máquina NA BATERIA. A medição reflete a bateria e a calibração "
@@ -424,12 +471,27 @@ def _cmd_bench(args: argparse.Namespace) -> int:
         sys.stderr.write("scout: medição incompleta: calibração NÃO gravada\n")
         return 1
     cal = B.build_calibration(results, results[0]["measured_at"][:10])
-    B.write_calibration(tuning_path, cal)
+    new_doc, notes = calstore.merge_calibration(old, identity, cal, __version__)
+    for n in notes:
+        sys.stderr.write(f"scout: calibração: {n}\n")
+    try:
+        calstore.write_calibration_file(cal_path, new_doc)
+    except calstore.CalibrationError as e:
+        raise InputError(str(e)) from e
     for pool, c in sorted(cal.items()):
         sys.stdout.write(f"calibração {pool}: banda {c['bandwidth_bytes_per_s'] / 1e9:.1f} GB/s, overhead "
                          f"{c['overhead_s_per_token']:.4f} s/token, forma {c['form']}, "
-                         f"{'estável' if c['stable'] else 'não estável'} -> {tuning_path}\n")
+                         f"{'estável' if c['stable'] else 'não estável'}, {describe_power(c['power'])}\n")
+    sys.stdout.write(f"calibração gravada em {cal_path}\n")
     return 0
+
+
+def _add_calibration_flags(p: argparse.ArgumentParser) -> None:
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--calibration", default=None, metavar="PATH",
+                   help="calibration.json do scout bench (erro se não existir); senão SCOUT_CALIBRATION ou o padrão do SO")
+    g.add_argument("--no-calibration", action="store_true",
+                   help="não lê calibração nem consulta motor nenhum (tokens/s pelo eta)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -447,6 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--tuning", default=str(TUNING_PATH), help="constantes empíricas (eta, max_bpw_offload)")
     plan.add_argument("--prompt-tokens", type=int, default=None,
                       help="tamanho do prompt em tokens; com prefill calibrado, estima o tempo até o 1º token")
+    _add_calibration_flags(plan)
     plan.set_defaults(func=_cmd_plan)
     col = sub.add_parser("collect", help="lê o hardware desta máquina e grava system.json")
     col.add_argument("--out", default="system.json", help="arquivo de saída ('-' imprime no stdout)")
@@ -463,12 +526,15 @@ def build_parser() -> argparse.ArgumentParser:
     ben.add_argument("--catalog", default=str(CATALOG_DEFAULT))
     ben.add_argument("--tuning", default=str(TUNING_PATH))
     ben.add_argument("--out", default="measured.json")
+    ben.add_argument("--calibration", default=None, metavar="PATH",
+                     help="arquivo onde gravar a calibração (padrão: SCOUT_CALIBRATION ou diretório de estado do usuário)")
     ben.set_defaults(func=_cmd_bench)
 
     srv = sub.add_parser("serve", help="backend local para o frontend (só 127.0.0.1, com token)")
     srv.add_argument("--port", type=int, default=8765, help="porta em 127.0.0.1 (padrão 8765; falha se ocupada)")
     srv.add_argument("--catalog", default=str(CATALOG_DEFAULT), help="catálogo de modelos")
     srv.add_argument("--tuning", default=str(TUNING_PATH), help="constantes empíricas (eta, max_bpw_offload)")
+    _add_calibration_flags(srv)
     srv.set_defaults(func=_cmd_serve)
     cat = sub.add_parser("catalog", help="mantém o catálogo a partir da API do Hugging Face")
     csub = cat.add_subparsers(dest="catalog_command", required=True)
