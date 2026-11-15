@@ -93,6 +93,8 @@ def render_markdown(f: dict) -> str:
                 notes.append("preterido por qualidade (ver avisos)")
             if c["primary_for"]:
                 notes.append("principal: " + ", ".join(c["primary_for"]))
+            if "ctx_effective" in c:
+                notes.append(f"contexto efetivo: {c['ctx_effective']} tokens")
             if c["blocked"]:
                 notes.append("bloqueado: " + c["blocked_reason"])
             lines.append(
@@ -163,6 +165,7 @@ def _cmd_collect(args: argparse.Namespace) -> int:
 
 
 POLICY_PATH = Path(__file__).resolve().parent.parent / "data" / "license_policy.json"
+OVERRIDES_PATH = Path(__file__).resolve().parent.parent / "data" / "task_overrides.json"
 CATALOG_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "catalog.schema.json"
 
 
@@ -175,7 +178,7 @@ def _utc_today() -> str:
 def _cmd_catalog_add(args: argparse.Namespace) -> int:
     # Único comando que toca a rede, e só via scout.hf.
     from scout import hf
-    from scout.catalog import build_entry_with_reasons, upsert
+    from scout.catalog import apply_task_overrides, build_entry_with_reasons, upsert
 
     policy, _ = _read_json(POLICY_PATH, None)
     path = Path(args.catalog)
@@ -198,6 +201,10 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
         raise InputError(f"Hugging Face: {e.reason} em {e.url}") from e
 
     entry, reasons, add_warnings = build_entry_with_reasons(args.repo, info, config, gguf, policy, _utc_today())
+    if OVERRIDES_PATH.exists():
+        overrides, _ = _read_json(OVERRIDES_PATH, None)
+        entry, override_msgs = apply_task_overrides(entry, overrides)
+        add_warnings = add_warnings + override_msgs
     text = json.dumps(upsert(catalog, entry), sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -212,6 +219,24 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
         sys.stderr.write(f"  aviso: {w}\n")
     if entry["license"] is not None and entry["commercial_ok"] is None:
         sys.stderr.write(f"  aviso: licença {entry['license']!r} fora de {POLICY_PATH.name}; commercial_ok=null\n")
+    return 0
+
+
+def _cmd_catalog_remove(args: argparse.Namespace) -> int:
+    from scout.catalog import remove
+
+    path = Path(args.catalog)
+    catalog, _ = _read_json(path, "catalog")
+    try:
+        catalog = remove(catalog, args.id)
+    except KeyError:
+        raise InputError(f"{args.id} não está em {path}") from None
+    text = json.dumps(catalog, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+    try:
+        path.write_text(text, encoding="utf-8")
+    except OSError as e:
+        raise InputError(f"não foi possível escrever {path}: {e.strerror or e}") from e
+    sys.stderr.write(f"scout: {args.id} removido de {path}\n")
     return 0
 
 
@@ -267,6 +292,10 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--catalog", default="data/catalog.json")
     add.add_argument("--offline", action="store_true", help="só usa o cache local, sem rede")
     add.set_defaults(func=_cmd_catalog_add)
+    rm = csub.add_parser("remove", help="remove um modelo do catálogo pelo id")
+    rm.add_argument("id", help="id do modelo (<org>/<nome>)")
+    rm.add_argument("--catalog", default="data/catalog.json")
+    rm.set_defaults(func=_cmd_catalog_remove)
     chk = csub.add_parser("check", help="valida o catálogo e avisa dados velhos")
     chk.add_argument("--catalog", default="data/catalog.json")
     chk.add_argument("--today", default=None, help="data de referência YYYY-MM-DD (padrão: hoje, UTC)")

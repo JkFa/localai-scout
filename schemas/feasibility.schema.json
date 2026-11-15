@@ -181,6 +181,7 @@
         "by_pool": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"$ref": "#/$defs/pool_usage"}},
         "tier": {"enum": ["confortavel", "limite"], "description": "Pior tier entre by_pool. inviavel nunca é candidato."},
         "tokens_per_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null se faltar banda do pool."},
+        "ctx_effective": {"type": "integer", "minimum": 1, "description": "Só em modelos avaliados apenas para embeddings: min(intent.ctx, ctx_max), o contexto usado no KV e no buffer (DECISIONS.md)."},
         "ttft_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null enquanto a fórmula de prefill não for especificada (DECISIONS.md)."},
         "confidence": {"$ref": "#/$defs/confidence"},
         "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified"]}},

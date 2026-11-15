@@ -27,7 +27,7 @@
       "properties": {
         "format": {"enum": ["GGUF", "EXL2", "AWQ", "GPTQ"]},
         "name": {"type": "string", "minLength": 1, "description": "Q4_K_M, Q8_0, 4.0bpw..."},
-        "bpw": {"type": ["number", "null"], "exclusiveMinimum": 0, "maximum": 32, "description": "Bits por peso efetivo. Calculado: file_bytes*8/params_total. null => quant ignorada pelo solver (bpw_unknown)."},
+        "bpw": {"type": ["number", "null"], "exclusiveMinimum": 0, "maximum": 40, "description": "Bits por peso efetivo. Calculado: file_bytes*8/params_total. null => quant ignorada pelo solver (bpw_unknown)."},
         "bpw_source": {"enum": ["file_bytes", "table", "nominal", null], "description": "file_bytes = calculado do arquivo; table = data/quant_bpw.json; nominal = declarado no nome (EXL2)."},
         "file_bytes": {"type": ["integer", "null"], "minimum": 1, "description": "Soma de todos os shards. null => solver usa fallback params*bpw/8*k_ovh e confidence low. Não torna o modelo incompleto."},
         "file_url": {"anyOf": [{"$ref": "#/$defs/https_url"}, {"type": "null"}]}

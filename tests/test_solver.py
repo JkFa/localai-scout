@@ -105,8 +105,14 @@ def check_candidates(out, system, catalog, intent_kw):
         q = next(x for x in m["quants"] if x["name"] == c["quant"]["name"])
         w, tol = expected_weights(m, q)
         assert abs(c["weights_bytes"] - w) <= tol
-        assert c["kv_bytes"] == kv_of(m, ctx, kv, batch)
-        assert c["buffer_bytes"] == buf_of(ctx)
+        # embeddings como única tarefa avaliada: ctx efetivo = min(intent.ctx, ctx_max) (DECISIONS)
+        only_emb = set(m["tasks"]) & set(intent_kw.get("tasks", ALL_TASKS)) == {"embeddings"}
+        eff = min(ctx, m["ctx_max"]) if only_emb else ctx
+        if ctx > m["ctx_max"]:
+            assert only_emb and c.get("ctx_effective") == m["ctx_max"]
+        assert c.get("ctx_effective", eff) == eff
+        assert c["kv_bytes"] == kv_of(m, eff, kv, batch)
+        assert c["buffer_bytes"] == buf_of(eff)
         assert c["total_bytes"] == c["weights_bytes"] + c["kv_bytes"] + c["buffer_bytes"]
         assert c["n_threads"] == perf  # nunca os núcleos lógicos
         assert c["tier"] != "inviavel"
@@ -417,9 +423,12 @@ def test_mla_rejected_with_reason(systems, catalog):
 
 
 def test_ctx_above_ctx_max_rejected_with_reason(systems, catalog):
-    out = run(systems["rtx3060"], catalog, ctx=16384)            # embed-110m tem ctx_max 8192
-    assert cand(out, "test/embed-110m") is None
-    r = rej(out, "test/embed-110m")
+    """Modelo avaliado para outra tarefa (chat) continua rejeitado com ctx_exceeds_max."""
+    cat = deep(catalog)
+    next(m for m in cat["models"] if m["id"] == "test/tiny-1b")["ctx_max"] = 4096
+    out = run(systems["rtx3060"], cat, ctx=8192)
+    assert cand(out, "test/tiny-1b") is None
+    r = rej(out, "test/tiny-1b")
     assert r["reason_code"] == "ctx_exceeds_max" and r["message"].strip()
     assert r["closest"] is None and r["missing_bytes"] is None
     assert cand(out, "test/dense-7b") is not None                # ctx_max 32768: segue valendo
@@ -428,14 +437,57 @@ def test_ctx_above_ctx_max_rejected_with_reason(systems, catalog):
 
 def test_ctx_equal_to_ctx_max_is_accepted(systems, catalog):
     out = run(systems["rtx3060"], catalog, ctx=8192)             # == ctx_max do embed
-    assert cand(out, "test/embed-110m") is not None
+    c = cand(out, "test/embed-110m")
+    assert c is not None and c.get("ctx_effective", 8192) == 8192
+    cat = deep(catalog)
+    next(m for m in cat["models"] if m["id"] == "test/tiny-1b")["ctx_max"] = 8192
+    assert cand(run(systems["rtx3060"], cat, ctx=8192), "test/tiny-1b") is not None
 
 
-def test_ctx_above_every_ctx_max_rejects_everything(systems, catalog):
+def test_embeddings_ctx_above_ctx_max_uses_effective_ctx(systems, catalog):
+    """Embeddings (única tarefa): ctx 16384 > ctx_max 8192 vira candidato com ctx_effective 8192."""
+    out = run(systems["rtx3060"], catalog, ctx=16384)
+    c = cand(out, "test/embed-110m")
+    assert c is not None and rej(out, "test/embed-110m") is None
+    assert c["ctx_effective"] == 8192
+    # KV com ctx 8192 (não 16384): 2*12*12*64*8192*2 bytes = 301_989_888 ; buffer 400e6 + 20e3*8192
+    assert c["kv_bytes"] == 301_989_888 and c["buffer_bytes"] == 563_840_000
+    assert c["total_bytes"] == 220_000_000 + 301_989_888 + 563_840_000     # F16 = 220_000_000
+    assert c["quant"]["name"] == "F16"
+    assert c["model"]["id"] in ids(out["candidates"])
+    # os demais modelos usam o ctx pedido (16384): 7B kv = 2*32*8*128*16384*2 = 2_147_483_648
+    d = cand(out, "test/dense-7b")
+    assert d["kv_bytes"] == 2_147_483_648 and d["buffer_bytes"] == 400_000_000 + 20_000 * 16384
+    assert "ctx_effective" not in d
+    assert_valid("feasibility.schema.json", out)
+
+
+def test_embeddings_ctx_below_ctx_max_effective_equals_intent(systems, catalog):
+    out = run(systems["rtx3060"], catalog, ctx=4096)
+    c = cand(out, "test/embed-110m")
+    assert c.get("ctx_effective", 4096) == 4096                 # presente (4096) ou ausente: ambos valem
+    # 2*12*12*64*4096*2 = 150_994_944 ; buffer 400e6 + 20e3*4096 = 481_920_000
+    assert c["kv_bytes"] == 150_994_944 and c["buffer_bytes"] == 481_920_000
+
+
+def test_embeddings_multi_task_model_still_rejected_above_ctx_max(systems, catalog):
+    """Só vale quando a ÚNICA tarefa avaliada (model.tasks ∩ intent.tasks) é embeddings."""
+    cat = deep(catalog)
+    next(m for m in cat["models"] if m["id"] == "test/embed-110m")["tasks"] = ["embeddings", "chat"]
+    out = run(systems["rtx3060"], cat, ctx=16384)               # intent com chat => avaliado também para chat
+    assert cand(out, "test/embed-110m") is None
+    assert rej(out, "test/embed-110m")["reason_code"] == "ctx_exceeds_max"
+    out2 = run(systems["rtx3060"], cat, tasks=("embeddings",), ctx=16384)   # interseção = {embeddings}
+    c = cand(out2, "test/embed-110m")
+    assert c is not None and c["ctx_effective"] == 8192 and c["kv_bytes"] == 301_989_888
+
+
+def test_ctx_above_every_ctx_max_rejects_all_but_embeddings(systems, catalog):
     out = run(systems["rtx3060"], catalog, ctx=40000)
-    assert out["candidates"] == []
+    assert ids(out["candidates"]) == {"test/embed-110m"}
+    assert out["candidates"][0]["ctx_effective"] == 8192
     assert {r["reason_code"] for r in out["rejected"]} == {"ctx_exceeds_max"}
-    assert ids(out["rejected"]) == {m["id"] for m in catalog["models"]}
+    assert ids(out["rejected"]) == {"test/tiny-1b", "test/dense-7b", "test/moe-30b-a3b"}
     assert_valid("feasibility.schema.json", out)
 
 

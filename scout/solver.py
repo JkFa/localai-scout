@@ -406,7 +406,12 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
             "skipped_quants": skipped or [],
         }
 
-    if intent.ctx > m["ctx_max"]:
+    # Embeddings (DECISIONS.md): ctx acima do máximo não rejeita; o texto é
+    # truncado/fatiado em ctx_max. Só quando a única tarefa avaliada é embeddings.
+    evaluated = [t for t in (m.get("tasks") or []) if t in intent.tasks]
+    embed_only = evaluated == ["embeddings"]
+    ctx = min(intent.ctx, m["ctx_max"]) if embed_only else intent.ctx
+    if ctx > m["ctx_max"]:
         return reject("ctx_exceeds_max",
                       f"Contexto pedido ({intent.ctx} tokens) acima do máximo do modelo ({m['ctx_max']} tokens).")
     if m["kv_model"] == "mla":
@@ -417,8 +422,8 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
     params_active: int = m["params_active"]
     n_layers: int = m["n_layers"]
     floor_bpw = E.min_bpw(params_total)
-    kv = E.kv_bytes(n_layers, m["n_kv_heads"], m["head_dim"], intent.ctx, intent.kv_quant, intent.batch)
-    buf = E.buffer_bytes(intent.ctx)
+    kv = E.kv_bytes(n_layers, m["n_kv_heads"], m["head_dim"], ctx, intent.kv_quant, intent.batch)
+    buf = E.buffer_bytes(ctx)
 
     skipped: list[dict[str, Any]] = []
     closest: tuple[Attempt, dict] | None = None
@@ -444,8 +449,11 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
         attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools)
         viable = [a for a in attempts if a.tier != "inviavel"]
         if viable:
-            return _candidate(ref, m, q, _choose(viable), weights, kv, buf, fallback, skipped,
-                              intent, tuning_default, n_threads), None
+            cand = _candidate(ref, m, q, _choose(viable), weights, kv, buf, fallback, skipped,
+                              intent, tuning_default, n_threads)
+            if embed_only:
+                cand["ctx_effective"] = ctx
+            return cand, None
         for a in attempts:  # empate: fica a primeira (maior bpw, ordem de PLACEMENTS)
             if closest is None or a.missing < closest[0].missing:
                 closest = (a, q)

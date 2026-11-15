@@ -37,7 +37,8 @@ MOE_EXPERT_KEYS: tuple[str, ...] = ("num_experts", "n_routed_experts", "num_loca
 GATED_ACTS: tuple[str, ...] = ("silu", "swish", "swiglu")
 
 STALE_DAYS = 60
-BPW_MAX = 32
+TASK_ENUM: tuple[str, ...] = ("chat", "code", "embeddings", "vlm", "stt", "diffusion")
+BPW_MAX = 40  # catalog.schema.json; F32 com metadados passa de 32
 
 _QUANT_RE = re.compile(r"(?i)(?<![A-Za-z0-9])((?:I?Q\d+(?:_[A-Z0-9]+)*)|BF16|FP16|F16|F32)(?![A-Za-z0-9])")
 _SHARD_RE = re.compile(r"-(\d{5})-of-(\d{5})$")
@@ -230,6 +231,7 @@ def gguf_quants(blob_info: dict, params_total: int | None,
         if file_bytes is not None and params_total is not None:
             bpw = round(file_bytes * 8 / params_total, 4)
             if not 0 < bpw <= BPW_MAX:
+                warnings.append(f"{key}: bpw calculado {bpw} fora de (0, {BPW_MAX}]; bpw fica null")
                 bpw = None
         quants.append({
             "format": "GGUF",
@@ -328,6 +330,36 @@ def build_entry_with_reasons(repo: str, info: dict, config: dict | None, gguf_in
     entry["complete"] = not incomplete
     entry["incomplete_fields"] = incomplete
     return entry, {f: reasons.get(f, "ausente") for f in incomplete}, warnings
+
+
+def apply_task_overrides(entry: dict, overrides: dict) -> tuple[dict, list[str]]:
+    """Override revisado por humano (data/task_overrides.json): só ACRESCENTA tarefas.
+
+    Não remove tarefas nem toca outro campo. Se tasks veio null da API, o
+    override não se aplica (preencheria um campo incompleto) e sai um aviso.
+    """
+    o = (overrides.get("overrides") or {}).get(entry["id"])
+    if not o:
+        return entry, []
+    add = [t for t in o.get("add_tasks", []) if t in TASK_ENUM]
+    bad = [t for t in o.get("add_tasks", []) if t not in TASK_ENUM]
+    msgs = [f"override com tarefa desconhecida ignorada: {t}" for t in bad]
+    if entry["tasks"] is None:
+        return entry, msgs + ["tasks null pela API: override de tarefas não aplicado"]
+    new = list(entry["tasks"]) + [t for t in add if t not in entry["tasks"]]
+    if new == entry["tasks"]:
+        return entry, msgs
+    out = dict(entry, tasks=new)
+    return out, msgs + [f"tasks +{','.join(t for t in new if t not in entry['tasks'])} por override "
+                        f"({o.get('reason', 'sem motivo')}; {o.get('source', 'sem fonte')})"]
+
+
+def remove(catalog: dict, model_id: str) -> dict:
+    """Catálogo sem o modelo; KeyError se o id não existe."""
+    models = catalog.get("models", [])
+    if not any(m.get("id") == model_id for m in models):
+        raise KeyError(model_id)
+    return dict(catalog, models=[m for m in models if m.get("id") != model_id])
 
 
 def upsert(catalog: dict, entry: dict) -> dict:

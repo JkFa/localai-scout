@@ -394,3 +394,58 @@ medido na coleta (schema exige) e oscila entre execuções.
 `sudo scout collect` (processo já root) ou `sudo dmidecode -t memory > mem.txt` seguido de
 `scout collect --dmidecode mem.txt`. O arquivo passa pelo mesmo parser; `source` = `dmidecode_file`.
 Quando negado, a dica com os dois caminhos vai no probe `dmidecode` do system.json e no stderr.
+
+## 2026-11-15 — embeddings usam ctx efetivo em vez de rejeitar
+
+**Decisão (humano).** Quando a única tarefa avaliada de um modelo (interseção
+de `model.tasks` com `intent.tasks`) é `embeddings`, o solver usa
+`ctx = min(intent.ctx, ctx_max)` no KV e no buffer, em vez de rejeitar com
+`ctx_exceeds_max` (texto longo é fatiado em ctx_max). O candidato leva o campo
+opcional `ctx_effective` (novo em `schemas/feasibility.schema.json`). Modelo
+avaliado também para outra tarefa, ou qualquer outra tarefa: comportamento
+anterior (rejeita).
+
+**Consequência.** Testes antigos que esperavam `ctx_exceeds_max` ou KV com
+`intent.ctx` para o modelo de embeddings precisam do ctx efetivo.
+
+## 2026-11-15 — tarefa code por override revisado
+
+**Decisão (humano).** A API não expressa "code" (sem pipeline_tag próprio).
+`data/task_overrides.json` (`reviewed: true`) lista, por repo, `add_tasks`,
+`reason` e `source` (URL do cartão). `scout catalog add` aplica o override
+depois de derivar `tasks` da API. Override só ACRESCENTA tarefas: nunca
+remove, nunca toca outro campo, e não se aplica se `tasks` veio null (não
+preenche campo incompleto). A origem fica registrada só aqui e no stderr do
+`add`: `catalog.schema.json` não tem campo de proveniência de tarefas e não
+foi alterado. Entrada única: `Qwen/Qwen2.5-Coder-7B-Instruct` → `code`.
+
+## 2026-11-15 — fórmula de params_active do MoE aprovada
+
+**Decisão (humano).** `params_active = safetensors.total − (n_experts −
+num_experts_per_tok) × camadas_MoE × 3 × hidden_size × ffn_expert`, com
+`ffn_expert = moe_intermediate_size` (ou `intermediate_size` no estilo
+Mixtral), camadas_MoE descontando `first_k_dense_replace` e
+`mlp_only_layers`, exigindo ativação com porta (silu/swish/swiglu). Qualquer
+dado faltando, `decoder_sparse_step`/`moe_layer_freq` ≠ 1 ou resultado fora de
+[1, total) → null e modelo incompleto. Implementada em
+`scout/catalog.py:moe_inactive_params`.
+
+## 2026-11-15 — license_policy revisada
+
+**Decisão (humano).** `data/license_policy.json` aprovado e marcado
+`reviewed: true`: apache-2.0, mit, bsd-2-clause, bsd-3-clause, cc-by-4.0 →
+true; cc-by-nc-4.0, cc-by-nc-sa-4.0, cc-by-nc-nd-4.0 → false; resto → null.
+
+## 2026-11-15 — scout catalog remove; SmolLM2 fora do catálogo
+
+**Decisão (humano).** Novo comando `scout catalog remove <id> [--catalog F]`,
+sai != 0 se o id não existir. Usado para remover
+`HuggingFaceTB/SmolLM2-1.7B-Instruct` de `data/catalog.json`.
+
+## 2026-11-15 — teto de bpw no catálogo sobe para 40
+
+**Contexto.** F32 com metadados passa de 32 bpw efetivo (nomic-embed F32 =
+32,04) e era anulado pelo teto do schema.
+
+**Decisão (humano).** `catalog.schema.json`: `quant.bpw.maximum` 32 → 40.
+`gguf_quants` só anula bpw fora de (0, 40], com aviso no `catalog add`.

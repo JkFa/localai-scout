@@ -371,4 +371,65 @@ def test_single_and_shards_warning_reaches_build_entry():
     _, _, warnings = C.build_entry_with_reasons(
         "test/dense-2b", j("info_dense.json"), j("config_dense.json"),
         j("gguf_single_and_shards.json"), POLICY, TODAY)
-    assert len(warnings) == 1
+    assert sum("divergem" in w for w in warnings) == 1
+
+
+# ---------------------------------------------------------------- overrides, remove, teto de bpw
+
+OVERRIDES = {"overrides": {"test/dense-2b": {"add_tasks": ["code", "chat"], "reason": "r",
+                                             "source": "https://huggingface.co/test/dense-2b"}}}
+
+
+def test_task_override_only_adds():
+    e = complete_entry()
+    out, msgs = C.apply_task_overrides(e, OVERRIDES)
+    assert out["tasks"] == ["chat", "code"]
+    assert {k: v for k, v in out.items() if k != "tasks"} == {k: v for k, v in e.items() if k != "tasks"}
+    assert e["tasks"] == ["chat"]  # entrada original intacta
+    assert len(msgs) == 1 and "code" in msgs[0]
+    assert schema_errors(as_catalog(out)) == []
+
+
+def test_task_override_other_repo_or_null_tasks_untouched():
+    other = dict(complete_entry(), id="test/other-1b")
+    assert C.apply_task_overrides(other, OVERRIDES) == (other, [])
+    null_tasks = dict(complete_entry(), tasks=None)
+    out, msgs = C.apply_task_overrides(null_tasks, OVERRIDES)
+    assert out["tasks"] is None and msgs
+
+
+def test_task_override_ignores_unknown_task():
+    ov = {"overrides": {"test/dense-2b": {"add_tasks": ["telepathy"]}}}
+    out, msgs = C.apply_task_overrides(complete_entry(), ov)
+    assert out["tasks"] == ["chat"] and any("telepathy" in m for m in msgs)
+
+
+def test_cli_add_applies_override_file(tmp_path, fake_hf, monkeypatch):
+    ov = tmp_path / "ov.json"
+    ov.write_text(json.dumps(OVERRIDES), encoding="utf-8")
+    monkeypatch.setattr(cli, "OVERRIDES_PATH", ov)
+    out = tmp_path / "catalog.json"
+    assert cli.main(["catalog", "add", "test/dense-2b", "--gguf-repo", "x/y", "--catalog", str(out)]) == 0
+    assert json.loads(out.read_text())["models"][0]["tasks"] == ["chat", "code"]
+
+
+def test_cli_catalog_remove(tmp_path):
+    a = complete_entry()
+    b = dict(a, id="test/aaa-1b")
+    p = tmp_path / "catalog.json"
+    p.write_text(json.dumps(C.upsert(C.upsert(as_catalog(), a), b)), encoding="utf-8")
+    assert cli.main(["catalog", "remove", "test/aaa-1b", "--catalog", str(p)]) == 0
+    assert [m["id"] for m in json.loads(p.read_text())["models"]] == ["test/dense-2b"]
+    assert cli.main(["catalog", "remove", "test/aaa-1b", "--catalog", str(p)]) != 0
+
+
+def test_bpw_above_32_kept_above_40_null():
+    info = {"id": "test/x-gguf", "siblings": [
+        {"rfilename": "x-F32.gguf", "lfs": {"size": 4_100_000_000}},   # 32.8 bpw
+        {"rfilename": "x-Q8_0.gguf", "lfs": {"size": 5_100_000_000}},  # 40.8 bpw
+    ]}
+    warnings: list[str] = []
+    qs = {q["name"]: q for q in C.gguf_quants(info, 1_000_000_000, warnings)}
+    assert qs["F32"]["bpw"] == 32.8
+    assert qs["Q8_0"]["bpw"] is None and qs["Q8_0"]["bpw_source"] is None
+    assert len(warnings) == 1 and "x-Q8_0" in warnings[0]

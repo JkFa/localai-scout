@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "task_overrides",
+  "reviewed": true,
+  "description": "Overrides de tarefas revisados por humano. Só ACRESCENTAM tarefas que a API não expressa (ex.: code não tem pipeline_tag). Aplicados por scout catalog add depois de derivar tasks da API.",
+  "overrides": {
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {
+      "add_tasks": [
+        "code"
+      ],
+      "reason": "modelo de código declarado no nome e no cartão",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct"
+    }
+  }
+}
