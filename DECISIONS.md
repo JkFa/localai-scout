@@ -308,10 +308,11 @@ apareçam por acidente.
    vem da sonda local (clock × largura de barramento, quando o driver
    informar) ou da medição de `scout bench`; sem isso fica `null` e
    `tokens_per_s_est` sai null.
-6. **Q6 — EM ABERTO.** A resposta ("usaremos modelos 100% free") não fecha o
-   teto de `n_gpu` (0,95 ou 0,80 do orçamento) da A19. Precisa ser decidido
-   antes da Fase 1. Registrado à parte: preferência por modelos de licença
-   livre na semente do catálogo (Fase 3).
+6. **Q6 — (a) 0,95.** `n_gpu = floor((0,95 * vram_usable - kv_gpu - buffer_gpu)
+   / bytes_camada)`, limitado a [0, n_layers]. Mesmo corte de "limite" do
+   resto da classificação; o offload resultante sai como "limite", não
+   "inviavel". Registrado à parte: preferência por modelos de licença livre na
+   semente do catálogo (Fase 3).
 7. **Q7 — 50%.** No pool unificado o orçamento é 50% da RAM total.
 8. **Q8 — aprovado.** STT/VLM/embeddings podem ficar `complete:false` até haver
    mapeamento próprio em M3.
