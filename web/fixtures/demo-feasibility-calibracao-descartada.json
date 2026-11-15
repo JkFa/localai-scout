@@ -1,0 +1,953 @@
+{
+ "candidates": [
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 11800000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 603979776,
+     "pool": "gpu",
+     "tier": "confortavel",
+     "total_bytes": 5366304480,
+     "weights_bytes": 4280404704
+    }
+   ],
+   "confidence": "medium",
+   "confidence_reasons": [
+    "eta_default",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 603979776,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-4B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-4B",
+    "n_layers": 36,
+    "params_active": 4022468096,
+    "params_total": 4022468096,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-4B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 36,
+   "n_threads": 6,
+   "placement": "gpu_full",
+   "primary_for": [
+    "chat"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "estimated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 8.513,
+    "file_bytes": 4280404704,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "eta",
+   "tokens_per_s_est": 52.57,
+   "total_bytes": 5366304480,
+   "ttft_s_est": null,
+   "weights_bytes": 4280404704
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 11800000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 234881024,
+     "pool": "gpu",
+     "tier": "confortavel",
+     "total_bytes": 8815326208,
+     "weights_bytes": 8098525184
+    }
+   ],
+   "confidence": "medium",
+   "confidence_reasons": [
+    "eta_default",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 234881024,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+    "n_layers": 28,
+    "params_active": 7615616512,
+    "params_total": 7615616512,
+    "source_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+    "tasks": [
+     "chat",
+     "code"
+    ]
+   },
+   "n_gpu_layers": 28,
+   "n_threads": 6,
+   "notes": [
+    {
+     "code": "offload_skipped_above_bpw",
+     "message": "FP16 híbrido descartado: acima de 8.5 bpw o offload não traz ganho perceptível; Q8_0 cabe inteiro na GPU."
+    }
+   ],
+   "placement": "gpu_full",
+   "primary_for": [
+    "code"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "estimated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 8.5073,
+    "file_bytes": 8098525184,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [
+    {
+     "format": "GGUF",
+     "name": "FP16",
+     "reason_code": "bpw_above_offload_limit"
+    }
+   ],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "eta",
+   "tokens_per_s_est": 27.78,
+   "total_bytes": 8815326208,
+   "ttft_s_est": null,
+   "weights_bytes": 8098525184
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 440960000,
+   "by_pool": [
+    {
+     "budget_bytes": 11800000000,
+     "buffer_bytes": 440960000,
+     "kv_bytes": 75497472,
+     "pool": "gpu",
+     "tier": "confortavel",
+     "total_bytes": 1064122240,
+     "weights_bytes": 547664768
+    }
+   ],
+   "confidence": "high",
+   "confidence_reasons": [
+    "decode_not_applicable",
+    "ttft_unspecified"
+   ],
+   "ctx_effective": 2048,
+   "kv_bytes": 75497472,
+   "model": {
+    "commercial_ok": true,
+    "id": "nomic-ai/nomic-embed-text-v1.5",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+    "n_layers": 12,
+    "params_active": 136731648,
+    "params_total": 136731648,
+    "source_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+    "tasks": [
+     "embeddings"
+    ]
+   },
+   "n_gpu_layers": 12,
+   "n_threads": 6,
+   "notes": [
+    {
+     "code": "decode_not_applicable",
+     "message": "Embeddings não geram texto token a token: tokens/s de decode não se aplica. A métrica aplicável é o throughput de prefill (tokens processados por segundo), ainda não estimado."
+    }
+   ],
+   "placement": "gpu_full",
+   "primary_for": [
+    "embeddings"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "estimated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 32.0432,
+    "file_bytes": 547664768,
+    "format": "GGUF",
+    "name": "F32"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_est": null,
+   "total_bytes": 1064122240,
+   "ttft_s_est": null,
+   "weights_bytes": 547664768
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 11800000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 603979776,
+     "pool": "gpu",
+     "tier": "limite",
+     "total_bytes": 9795417888,
+     "weights_bytes": 8709518112
+    }
+   ],
+   "confidence": "medium",
+   "confidence_reasons": [
+    "eta_default",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 603979776,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-8B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-8B",
+    "n_layers": 36,
+    "params_active": 8190735360,
+    "params_total": 8190735360,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-8B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 36,
+   "n_threads": 6,
+   "placement": "gpu_full",
+   "primary_for": [],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "estimated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 8.5067,
+    "file_bytes": 8709518112,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [],
+   "tier": "limite",
+   "tokens_per_s_basis": "eta",
+   "tokens_per_s_est": 25.83,
+   "total_bytes": 9795417888,
+   "ttft_s_est": null,
+   "weights_bytes": 8709518112
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 11800000000,
+     "buffer_bytes": 481920000,
+     "kv_bytes": 402653184,
+     "pool": "gpu",
+     "tier": "limite",
+     "total_bytes": 10842131036,
+     "weights_bytes": 9957557852
+    },
+    {
+     "budget_bytes": 14179869184,
+     "buffer_bytes": 0,
+     "kv_bytes": 0,
+     "pool": "cpu",
+     "tier": "limite",
+     "total_bytes": 11768022948,
+     "weights_bytes": 11768022948
+    }
+   ],
+   "confidence": "medium",
+   "confidence_reasons": [
+    "bandwidth_estimated",
+    "eta_default",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 402653184,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-30B-A3B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+    "n_layers": 48,
+    "params_active": 3353032704,
+    "params_total": 30532122624,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 22,
+   "n_threads": 6,
+   "placement": "hybrid",
+   "primary_for": [],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "estimated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 5.6925,
+    "file_bytes": 21725580800,
+    "format": "GGUF",
+    "name": "Q5_K_M"
+   },
+   "skipped_quants": [
+    {
+     "format": "GGUF",
+     "name": "Q8_0",
+     "reason_code": "does_not_fit"
+    },
+    {
+     "format": "GGUF",
+     "name": "Q6_K",
+     "reason_code": "does_not_fit"
+    }
+   ],
+   "tier": "limite",
+   "tokens_per_s_basis": "eta",
+   "tokens_per_s_est": 21.31,
+   "total_bytes": 22610153984,
+   "ttft_s_est": null,
+   "weights_bytes": 21725580800
+  }
+ ],
+ "excluded": {
+  "incomplete": 2,
+  "task_mismatch": 0
+ },
+ "fixture": {
+  "description": "Plano derivado de entradas sintéticas (fixture).",
+  "synthetic": true
+ },
+ "inputs": {
+  "calibration": {
+   "calibration_schema_version": 1,
+   "match": [
+    {
+     "current": "linux",
+     "effect": "none",
+     "field": "platform",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": "linux"
+    },
+    {
+     "current": "x86_64",
+     "effect": "none",
+     "field": "os.arch",
+     "layer": 1,
+     "result": "equal",
+     "scope": "all",
+     "stored": "x86_64"
+    },
+    {
+     "current": "FIXTURE CPU 6C/12T",
+     "effect": "discard",
+     "field": "cpu.model",
+     "layer": 1,
+     "result": "different",
+     "scope": "all",
+     "stored": "CPU Fictícia de Exemplo 8C"
+    },
+    {
+     "current": 6,
+     "effect": "discard",
+     "field": "cpu.cores_physical",
+     "layer": 1,
+     "result": "different",
+     "scope": "all",
+     "stored": 8
+    },
+    {
+     "current": 17179869184,
+     "effect": "discard",
+     "field": "memory.ram_total_bytes",
+     "layer": 1,
+     "result": "different",
+     "scope": "all",
+     "stored": 16000000000
+    },
+    {
+     "current": "FIXTURE NVIDIA 12GB (perfil 2)",
+     "effect": "none",
+     "field": "gpu.name",
+     "layer": 1,
+     "result": "unknown",
+     "scope": "gpu",
+     "stored": null
+    },
+    {
+     "current": "cuda",
+     "effect": "none",
+     "field": "gpu.backend",
+     "layer": 1,
+     "result": "unknown",
+     "scope": "gpu",
+     "stored": null
+    },
+    {
+     "current": 12884901888,
+     "effect": "none",
+     "field": "gpu.vram_total_bytes",
+     "layer": 1,
+     "result": "unknown",
+     "scope": "gpu",
+     "stored": null
+    }
+   ],
+   "origin": "flag",
+   "pools": {
+    "cpu": {
+     "available_power": [
+      {
+       "not_applicable": [],
+       "on_ac": true,
+       "profile": "performance"
+      },
+      {
+       "not_applicable": [],
+       "on_ac": false,
+       "profile": "balanced"
+      }
+     ],
+     "calibration": {
+      "bandwidth_bytes_per_s": 10000000000,
+      "date": "2000-01-01",
+      "fit": {
+       "discard_reason": "um único modelo",
+       "one_param": {
+        "bandwidth_bytes_per_s": 10000000000,
+        "overhead_s_per_token": 0.0
+       },
+       "two_param": null
+      },
+      "form": "1p",
+      "measured_with": {
+       "memory.channels": 2,
+       "memory.speed_mts": null,
+       "os.kernel": "6.99.0-1-exemplo"
+      },
+      "models": [
+       {
+        "architecture": "exemplo",
+        "bytes": 2000000000,
+        "id": "exemplo/modelo-ficticio-4b"
+       }
+      ],
+      "overhead_s_per_token": 0.0,
+      "power": {
+       "not_applicable": [],
+       "on_ac": false,
+       "profile": "balanced"
+      },
+      "prefill_reason": "exemplo: prefill não medido nesta entrada",
+      "prefill_tokens_per_s": null,
+      "stable": true,
+      "tool": "ollama",
+      "tool_version": "9.9.9"
+     },
+     "engine": {
+      "current_version": null,
+      "result": "unknown",
+      "stored_version": "9.9.9",
+      "tool": "ollama"
+     },
+     "match": [
+      {
+       "current": "6.8.0-fixture",
+       "effect": "downgrade",
+       "field": "os.kernel",
+       "layer": "software",
+       "result": "different",
+       "scope": "all",
+       "stored": "6.99.0-1-exemplo"
+      },
+      {
+       "current": 3200,
+       "effect": "cap_medium",
+       "field": "memory.speed_mts",
+       "layer": 2,
+       "result": "unknown",
+       "scope": "cpu",
+       "stored": null
+      },
+      {
+       "current": 2,
+       "effect": "none",
+       "field": "memory.channels",
+       "layer": 2,
+       "result": "equal",
+       "scope": "cpu",
+       "stored": 2
+      }
+     ],
+     "power_match": "other_state",
+     "reasons": [
+      "calibration_machine_mismatch"
+     ],
+     "status": "discarded"
+    }
+   },
+   "status": "discarded",
+   "store": {
+    "calibration_schema_version": 1,
+    "machine": {
+     "cpu.cores_physical": 8,
+     "cpu.model": "CPU Fictícia de Exemplo 8C",
+     "gpu.backend": null,
+     "gpu.name": null,
+     "gpu.vram_total_bytes": null,
+     "memory.ram_total_bytes": 16000000000,
+     "os.arch": "x86_64",
+     "platform": "linux"
+    },
+    "scout_version": "0.0.0"
+   }
+  },
+  "catalog": {
+   "model_count": 7,
+   "oldest_verified_at": "2026-11-15",
+   "sha256": "bfb5520c685027961f7ef2df943f6e27ecac497fe4841e0fabe2ec7aa3047c8b"
+  },
+  "intent": {
+   "batch": 1,
+   "commercial_use": false,
+   "ctx": 4096,
+   "kv_quant": "f16",
+   "tasks": [
+    "chat",
+    "code",
+    "embeddings",
+    "vlm",
+    "stt"
+   ]
+  },
+  "power": {
+   "not_applicable": [],
+   "on_ac": true,
+   "profile": "performance"
+  },
+  "system": {
+   "collected_at": "2026-11-15T12:00:00Z",
+   "cpu": {
+    "cores_efficiency": {
+     "confidence": "medium",
+     "source": "derived:cpu_not_hybrid",
+     "value": 0
+    },
+    "cores_logical": {
+     "confidence": "high",
+     "source": "lscpu",
+     "value": 12
+    },
+    "cores_performance": {
+     "confidence": "high",
+     "note": "CPU não híbrida",
+     "source": "derived:cores_physical",
+     "value": 6
+    },
+    "cores_physical": {
+     "confidence": "high",
+     "source": "lscpu",
+     "value": 6
+    },
+    "isa": {
+     "amx": {
+      "confidence": "high",
+      "source": "lscpu:flags",
+      "value": false
+     },
+     "avx2": {
+      "confidence": "high",
+      "source": "lscpu:flags",
+      "value": true
+     },
+     "avx512": {
+      "confidence": "high",
+      "source": "lscpu:flags",
+      "value": false
+     },
+     "neon": {
+      "confidence": "high",
+      "source": "platform.machine",
+      "value": false
+     },
+     "sve": {
+      "confidence": "high",
+      "source": "platform.machine",
+      "value": false
+     }
+    },
+    "model": {
+     "confidence": "high",
+     "source": "lscpu",
+     "value": "FIXTURE CPU 6C/12T"
+    },
+    "vendor": {
+     "confidence": "high",
+     "source": "lscpu",
+     "value": "GenuineIntel"
+    }
+   },
+   "disks": {
+    "confidence": "high",
+    "source": "os.statvfs+lsblk",
+    "value": [
+     {
+      "free_bytes": {
+       "confidence": "high",
+       "source": "os.statvfs",
+       "value": 200000000000
+      },
+      "kind": {
+       "confidence": "medium",
+       "source": "lsblk:rota+tran",
+       "value": "nvme"
+      },
+      "mount": "/",
+      "total_bytes": {
+       "confidence": "high",
+       "source": "os.statvfs",
+       "value": 500000000000
+      }
+     }
+    ]
+   },
+   "fixture": {
+    "description": "Perfil 2 de PROMPT.md (desktop 16 GB DDR4 dual-channel + GPU NVIDIA 12 GB). Valores SINTÉTICOS para exemplo de contrato; nenhum é medição real.",
+    "synthetic": true
+   },
+   "gpus": {
+    "confidence": "high",
+    "source": "nvidia-smi",
+    "value": [
+     {
+      "backend": {
+       "confidence": "high",
+       "source": "derived:vendor",
+       "value": "cuda"
+      },
+      "bandwidth_bytes_per_s": {
+       "confidence": "medium",
+       "note": "valor sintético redondo, não é especificação de produto",
+       "source": "fixture",
+       "value": 300000000000
+      },
+      "bf16": {
+       "confidence": "low",
+       "source": "derived:compute_capability",
+       "value": null
+      },
+      "compute_capability": {
+       "confidence": "low",
+       "note": "sintético: deixado null para exercitar o caminho de campo ausente",
+       "source": "nvidia-smi:compute_cap",
+       "value": null
+      },
+      "driver_version": {
+       "confidence": "high",
+       "source": "nvidia-smi:driver_version",
+       "value": "000.00-fixture"
+      },
+      "flash_attention": {
+       "confidence": "low",
+       "source": "derived:compute_capability",
+       "value": null
+      },
+      "fp8": {
+       "confidence": "low",
+       "source": "derived:compute_capability",
+       "value": null
+      },
+      "index": 0,
+      "name": {
+       "confidence": "high",
+       "source": "nvidia-smi",
+       "value": "FIXTURE NVIDIA 12GB (perfil 2)"
+      },
+      "vendor": {
+       "confidence": "high",
+       "source": "nvidia-smi",
+       "value": "nvidia"
+      },
+      "vram_free_bytes": {
+       "confidence": "high",
+       "source": "nvidia-smi:memory.free",
+       "value": 12400000000
+      },
+      "vram_total_bytes": {
+       "confidence": "high",
+       "source": "nvidia-smi:memory.total",
+       "value": 12884901888
+      }
+     }
+    ]
+   },
+   "kind": "system",
+   "memory": {
+    "bandwidth_bytes_per_s": {
+     "confidence": "medium",
+     "note": "3200 MT/s * 2 canais * 8 bytes",
+     "source": "estimate:mts*channels*8",
+     "value": 51200000000
+    },
+    "channels": {
+     "confidence": "medium",
+     "source": "dmidecode",
+     "value": 2
+    },
+    "ram_total_bytes": {
+     "confidence": "high",
+     "source": "/proc/meminfo:MemTotal",
+     "value": 17179869184
+    },
+    "speed_mts": {
+     "confidence": "medium",
+     "source": "dmidecode",
+     "value": 3200
+    },
+    "swap_total_bytes": {
+     "confidence": "high",
+     "source": "/proc/meminfo:SwapTotal",
+     "value": 2147483648
+    },
+    "type": {
+     "confidence": "medium",
+     "source": "dmidecode",
+     "value": "DDR4"
+    },
+    "unified": {
+     "confidence": "high",
+     "source": "derived:platform",
+     "value": false
+    }
+   },
+   "os": {
+    "arch": {
+     "confidence": "high",
+     "source": "platform.machine",
+     "value": "x86_64"
+    },
+    "kernel": {
+     "confidence": "high",
+     "source": "platform.release",
+     "value": "6.8.0-fixture"
+    },
+    "name": {
+     "confidence": "high",
+     "source": "/etc/os-release:NAME",
+     "value": "Ubuntu"
+    },
+    "version": {
+     "confidence": "high",
+     "source": "/etc/os-release:VERSION_ID",
+     "value": "24.04"
+    }
+   },
+   "platform": "linux",
+   "power": {
+    "has_battery": {
+     "confidence": "high",
+     "source": "/sys/class/power_supply",
+     "value": false
+    },
+    "on_battery": {
+     "confidence": "high",
+     "source": "/sys/class/power_supply",
+     "value": false
+    }
+   },
+   "probes": [
+    {
+     "message": "",
+     "probe": "lscpu",
+     "status": "ok"
+    },
+    {
+     "message": "fixture",
+     "probe": "dmidecode",
+     "status": "ok"
+    },
+    {
+     "message": "",
+     "probe": "nvidia-smi",
+     "status": "ok"
+    },
+    {
+     "message": "rocm-smi não está no PATH",
+     "probe": "rocm-smi",
+     "status": "not_found"
+    },
+    {
+     "message": "ollama não está no PATH",
+     "probe": "ollama",
+     "status": "not_found"
+    }
+   ],
+   "runtimes": {
+    "comfyui": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": false
+    },
+    "llama_bench": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": true
+    },
+    "llama_cli": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": true
+    },
+    "llama_server": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": true
+    },
+    "lm_studio": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": false
+    },
+    "ollama": {
+     "confidence": "high",
+     "source": "PATH",
+     "value": false
+    },
+    "ollama_models": {
+     "confidence": "low",
+     "note": "ollama ausente do PATH",
+     "source": "ollama list",
+     "value": null
+    }
+   },
+   "schema_version": 1,
+   "scout_version": "0.1.0"
+  },
+  "tuning": {
+   "eta_cpu": 0.6,
+   "eta_gpu": 0.75,
+   "max_bpw_offload": 8.5,
+   "prefill_reference": {
+    "date": "2026-11-15",
+    "measured_on": "AMD Ryzen 5 7520U, 4 núcleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens",
+    "power": "AC, performance",
+    "tokens_per_s": 11.7,
+    "tool": "ollama 0.17.6 API"
+   },
+   "source": "default"
+  }
+ },
+ "kind": "feasibility",
+ "pools": [
+  {
+   "bandwidth_bytes_per_s": 300000000000,
+   "eta": 0.75,
+   "gpu_index": 0,
+   "id": "gpu",
+   "provenance": {
+    "bandwidth_bytes_per_s": "measured",
+    "eta": "estimated",
+    "reserved_bytes": "calculated",
+    "total_bytes": "measured",
+    "usable_bytes": "calculated"
+   },
+   "reserved_bytes": 1084901888,
+   "total_bytes": 12884901888,
+   "usable_bytes": 11800000000
+  },
+  {
+   "bandwidth_bytes_per_s": 51200000000,
+   "eta": 0.6,
+   "gpu_index": null,
+   "id": "cpu",
+   "provenance": {
+    "bandwidth_bytes_per_s": "estimated",
+    "eta": "estimated",
+    "reserved_bytes": "calculated",
+    "total_bytes": "measured",
+    "usable_bytes": "calculated"
+   },
+   "reserved_bytes": 3000000000,
+   "total_bytes": 17179869184,
+   "usable_bytes": 14179869184
+  }
+ ],
+ "rejected": [],
+ "schema_version": 1,
+ "scout_version": "0.1.0",
+ "warnings": [
+  {
+   "code": "swap_not_a_fix",
+   "message": "Aumentar swap não faz modelo maior rodar: pesos paginados para disco derrubam a geração para ~0,1 token/s. Alavancas, nesta ordem: KV em q8_0, menos contexto, bpw menor dentro do piso, modelo menor.",
+   "severity": "info"
+  },
+  {
+   "code": "bandwidth_estimated",
+   "field": "memory.bandwidth_bytes_per_s",
+   "message": "Banda da RAM estimada (fonte: estimate:mts*channels*8).",
+   "severity": "info"
+  },
+  {
+   "code": "calibration_machine_mismatch",
+   "field": "cpu.model",
+   "message": "cpu.model difere (calibração: 'CPU Fictícia de Exemplo 8C'; agora: 'FIXTURE CPU 6C/12T'): calibração do pool cpu descartada, tokens/s volta ao eta. Rode `scout bench --run` nesta máquina para recalibrar.",
+   "severity": "warn"
+  },
+  {
+   "code": "calibration_machine_mismatch",
+   "field": "cpu.cores_physical",
+   "message": "cpu.cores_physical difere (calibração: 8; agora: 6): calibração do pool cpu descartada, tokens/s volta ao eta. Rode `scout bench --run` nesta máquina para recalibrar.",
+   "severity": "warn"
+  },
+  {
+   "code": "calibration_machine_mismatch",
+   "field": "memory.ram_total_bytes",
+   "message": "memory.ram_total_bytes difere (calibração: 16000000000; agora: 17179869184): calibração do pool cpu descartada, tokens/s volta ao eta. Rode `scout bench --run` nesta máquina para recalibrar.",
+   "severity": "warn"
+  },
+  {
+   "code": "slow_prefill_cpu",
+   "message": "Processar o prompt na CPU é lento (1 candidato(s) com a maioria das camadas na CPU: Qwen/Qwen3-30B-A3B). Medição de referência: ~12 tokens/s de prefill em AMD Ryzen 5 7520U, 4 núcleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens (ollama 0.17.6 API, 2026-11-15); nesse ritmo, um prompt de 700 tokens leva perto de um minuto. Outra máquina ou outro modelo mudam esse número; o tempo até o primeiro token não é estimado.",
+   "severity": "warn"
+  }
+ ]
+}

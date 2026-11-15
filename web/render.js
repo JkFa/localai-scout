@@ -185,7 +185,8 @@ export function describePower(p) {
   return parts.join(", ");
 }
 const isRecord = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
-const matchVal = (v) => (v === null || v === undefined ? "não lido" : typeof v === "boolean" ? (v ? "sim" : "não") : typeof v === "number" ? v.toLocaleString("pt-BR") : String(v));
+const matchVal = (v, field) => (v === null || v === undefined ? "não lido" : typeof v === "boolean" ? (v ? "sim" : "não") : typeof v === "number" ? (/_bytes$/.test(String(field)) ? fmtGiB(v) : v.toLocaleString("pt-BR")) : String(v));
+const orUnread = (v) => (v === null || v === undefined ? "não lido" : String(v));
 
 function calPoolBlock(id, p) {
   const e = isRecord(p.calibration) ? p.calibration : null;
@@ -200,6 +201,11 @@ function calPoolBlock(id, p) {
       ["Data e ferramenta", `${e.date ?? "—"} · ${TOOL[e.tool] || e.tool}`],
       ["Banda efetiva", e.bandwidth_bytes_per_s == null ? h("em", { class: "unknown" }, "desconhecida") : num(fmtGBps(e.bandwidth_bytes_per_s), "measured")],
       ["Energia gravada (entrada escolhida)", describePower(e.power)]);
+    const mw = isRecord(e.measured_with) ? e.measured_with : null;
+    if (mw) {
+      const mts = mw["memory.speed_mts"], ch = mw["memory.channels"];
+      items.push(["Medida com", `kernel ${orUnread(mw["os.kernel"])}; RAM ${mts == null ? "não lido" : `${mts} MT/s`}, ${ch == null ? "não lido" : `${ch} canais`}`]);
+    }
   }
   if (eng) {
     const diff = eng.result === "different" ? " (mudou)" : eng.result === "unknown" ? " (não confirmado)" : "";
@@ -208,20 +214,21 @@ function calPoolBlock(id, p) {
   items.push(["Correspondência de energia", POWER_MATCH[p.power_match] || String(p.power_match)]);
   const av = Array.isArray(p.available_power) ? p.available_power : [];
   items.push(["Estados gravados", av.length ? h("ul", { class: "plain" }, av.map((a) => h("li", {}, describePower(a)))) : "nenhum"]);
-  return h("div", { class: "cal-pool" }, h("h5", {}, `Pool ${id}`), h("dl", { class: "kv" }, items.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])));
+  return h("div", { class: "cal-pool" }, h("h5", {}, `Pool ${id}`), h("dl", { class: "kv" }, items.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])),
+    Array.isArray(p.match) && p.match.some((m) => isRecord(m) && m.effect !== "none") ? calMatchTable(p.match, `Campos do pool ${id} que mudaram o efeito da calibração`) : null);
 }
 
-function calMatchTable(match) {
+function calMatchTable(match, caption = "Campos que mudaram o efeito da calibração") {
   const rows = match.filter((m) => isRecord(m) && m.effect !== "none").map((m) =>
     h("tr", {},
       h("th", { scope: "row" }, String(m.field)),
       h("td", {}, MATCH_LAYER[m.layer] || String(m.layer)),
-      h("td", {}, matchVal(m.stored)),
-      h("td", {}, matchVal(m.current)),
+      h("td", {}, matchVal(m.stored, m.field)),
+      h("td", {}, matchVal(m.current, m.field)),
       h("td", {}, MATCH_RESULT[m.result] || String(m.result)),
       h("td", {}, h("strong", {}, MATCH_EFFECT[m.effect] || String(m.effect)))));
   if (!rows.length) return h("p", { class: "muted" }, "Nenhum campo de identidade com efeito sobre a calibração.");
-  return h("div", { class: "scroll" }, table("Campos que mudaram o efeito da calibração", ["Campo", "Camada", "Gravado", "Atual", "Resultado", "Efeito"], rows));
+  return h("div", { class: "scroll" }, table(caption, ["Campo", "Camada", "Gravado", "Atual", "Resultado", "Efeito"], rows));
 }
 
 export function calibrationBlock(doc) {

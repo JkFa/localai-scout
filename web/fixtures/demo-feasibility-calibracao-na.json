@@ -17,6 +17,7 @@
    ],
    "confidence": "medium",
    "confidence_reasons": [
+    "calibration_memory_unverified",
     "calibration_other_arch",
     "calibration_power_unknown",
     "ttft_unspecified"
@@ -80,6 +81,7 @@
    ],
    "confidence": "medium",
    "confidence_reasons": [
+    "calibration_memory_unverified",
     "calibration_other_arch",
     "calibration_power_unknown",
     "ttft_unspecified"
@@ -150,6 +152,7 @@
    ],
    "confidence": "medium",
    "confidence_reasons": [
+    "calibration_memory_unverified",
     "calibration_other_arch",
     "calibration_power_unknown",
     "ttft_unspecified"
@@ -294,15 +297,6 @@
      "stored": "x86_64"
     },
     {
-     "current": "9.9.0-exemplo",
-     "effect": "none",
-     "field": "os.kernel",
-     "layer": "software",
-     "result": "equal",
-     "scope": "all",
-     "stored": "9.9.0-exemplo"
-    },
-    {
      "current": "CPU Fictícia de Exemplo 8C",
      "effect": "none",
      "field": "cpu.model",
@@ -355,24 +349,6 @@
      "result": "unknown",
      "scope": "gpu",
      "stored": null
-    },
-    {
-     "current": 5000,
-     "effect": "none",
-     "field": "memory.speed_mts",
-     "layer": 2,
-     "result": "equal",
-     "scope": "cpu",
-     "stored": 5000
-    },
-    {
-     "current": 2,
-     "effect": "none",
-     "field": "memory.channels",
-     "layer": 2,
-     "result": "equal",
-     "scope": "cpu",
-     "stored": 2
     }
    ],
    "origin": "flag",
@@ -399,6 +375,11 @@
        "two_param": null
       },
       "form": "1p",
+      "measured_with": {
+       "memory.channels": 2,
+       "memory.speed_mts": null,
+       "os.kernel": "6.99.0-1-exemplo"
+      },
       "models": [
        {
         "architecture": "exemplo",
@@ -426,9 +407,39 @@
       "stored_version": "9.9.9",
       "tool": "ollama"
      },
+     "match": [
+      {
+       "current": "6.99.0-1-exemplo",
+       "effect": "none",
+       "field": "os.kernel",
+       "layer": "software",
+       "result": "equal",
+       "scope": "all",
+       "stored": "6.99.0-1-exemplo"
+      },
+      {
+       "current": 5000,
+       "effect": "cap_medium",
+       "field": "memory.speed_mts",
+       "layer": 2,
+       "result": "unknown",
+       "scope": "cpu",
+       "stored": null
+      },
+      {
+       "current": 2,
+       "effect": "none",
+       "field": "memory.channels",
+       "layer": 2,
+       "result": "equal",
+       "scope": "cpu",
+       "stored": 2
+      }
+     ],
      "power_match": "unknown",
      "reasons": [
-      "calibration_power_unknown"
+      "calibration_power_unknown",
+      "calibration_memory_unverified"
      ],
      "status": "applied"
     }
@@ -442,11 +453,8 @@
      "gpu.backend": null,
      "gpu.name": null,
      "gpu.vram_total_bytes": null,
-     "memory.channels": 2,
      "memory.ram_total_bytes": 16000000000,
-     "memory.speed_mts": 5000,
      "os.arch": "x86_64",
-     "os.kernel": "9.9.0-exemplo",
      "platform": "linux"
     },
     "scout_version": "0.0.0"
@@ -620,7 +628,7 @@
     "kernel": {
      "confidence": "high",
      "source": "fixture",
-     "value": "9.9.0-exemplo"
+     "value": "6.99.0-1-exemplo"
     },
     "name": {
      "confidence": "high",
@@ -836,6 +844,12 @@
    "code": "calibration_power_unknown",
    "field": "inputs.calibration.pools.cpu.power_match",
    "message": "Estado de energia atual não lido (perfil desconhecido); usando a medição mais lenta compatível desta máquina (20.00 GB/s efetivos).",
+   "severity": "info"
+  },
+  {
+   "code": "calibration_memory_unverified",
+   "field": "memory.speed_mts",
+   "message": "A calibração foi gravada sem MT/s e canais da RAM; gere o system.json com o dmidecode legível (`sudo scout collect` ou `scout collect --dmidecode <arquivo de sudo dmidecode -t memory>`) e rode `scout bench --run` de novo para liberar confiança alta.",
    "severity": "info"
   },
   {
