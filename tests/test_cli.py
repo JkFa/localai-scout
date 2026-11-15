@@ -128,6 +128,9 @@ def _numbers(node, acc):
             _numbers(v, acc)
 
 
+BW = re.compile(r"(\d+(?:\.\d+)?) GB/s")
+
+
 def markdown_numbers_missing_from_json(md: str, doc: dict) -> list[str]:
     strings: set[str] = set()
     _strings(doc, strings)
@@ -137,13 +140,19 @@ def markdown_numbers_missing_from_json(md: str, doc: dict) -> list[str]:
     md = re.sub(r"(?m)^\s*\d+[.)]\s", " ", md)          # numeração de listas
     nums: list = []
     _numbers(doc, nums)
-    gb = {float(fmt_gb(n).split()[0]) for n in nums if isinstance(n, int) and n >= 0}
+    ints = [n for n in nums if isinstance(n, int) and n >= 0]
+    gib = {float(fmt_gb(n).split()[0]) for n in ints}        # memória: GiB (n / 2**30)
+    gbps = {round(n / 1e9, 2) for n in ints}                 # banda: GB/s decimal (bytes/s / 1e9)
     missing = []
+    for tok in BW.findall(md):                               # banda só vale com rótulo GB/s
+        if float(tok) not in gbps:
+            missing.append(tok + " GB/s")
+    md = BW.sub(" ", md)
     for tok in NUM.findall(md):
         norm = tok.replace(",", ".")
         decimals = len(norm.split(".")[1]) if "." in norm else 0
         value = float(norm)
-        if value in gb and decimals == 2:               # número exibido via fmt_gb (bytes no JSON)
+        if value in gib and decimals == 2:                   # número exibido via fmt_gb (bytes no JSON)
             continue
         if any(round(x, decimals) == value for x in nums):
             continue
@@ -162,11 +171,13 @@ def test_every_markdown_number_exists_in_json(profile, extra, capsys):
 
 def test_markdown_checker_detects_a_fabricated_number():
     """Auto-teste do verificador: um número que não está no JSON tem de ser apontado."""
-    doc = {"a": 7_650_000_000, "tokens": 35.29, "ctx": 8192, "id": "test/x-7b"}
-    ok = "test/x-7b usa 7.65 GB, 35.3 tok/s, ctx 8192"
-    bad = ok + " e 99.99 GB"
+    doc = {"a": 7_650_000_000, "bw": 360_000_000_000, "tokens": 35.29, "ctx": 8192, "id": "test/x-7b"}
+    ok = "test/x-7b usa 7.12 GiB, 35.3 tok/s, ctx 8192, banda 360.00 GB/s"
     assert markdown_numbers_missing_from_json(ok, doc) == []
-    assert markdown_numbers_missing_from_json(bad, doc) == ["99.99"]
+    assert markdown_numbers_missing_from_json(ok + " e 99.99 GiB", doc) == ["99.99"]
+    # 7.65 (GB decimal) NÃO vale mais para memória; 335.28 (GiB da banda) não vale para GB/s
+    assert markdown_numbers_missing_from_json("usa 7.65 GiB", doc) == ["7.65"]
+    assert markdown_numbers_missing_from_json("banda 335.28 GB/s", doc) == ["335.28 GB/s"]
 
 
 # ---------------------------------------------------------------- semântica na CLI
@@ -237,3 +248,17 @@ def test_cli_does_not_touch_the_network(capsys, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     rc, out, _ = plan(capsys, "rtx3060")
     assert rc == 0 and out
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_markdown_units_gib_for_memory_gbps_for_bandwidth(profile, capsys):
+    _, md, _ = plan(capsys, profile)
+    assert "GiB" in md
+    assert not re.search(r"\d GB(?!/s)", md), "memória deve sair em GiB, não GB"
+    assert re.search(r"\d GB/s", md)       # banda em GB/s decimal
+
+
+def test_cli_json_never_has_catalog_stale(capsys):
+    for profile in PROFILES:
+        doc, _ = plan_json(capsys, profile)
+        assert "catalog_stale" not in {w["code"] for w in doc["warnings"]}
