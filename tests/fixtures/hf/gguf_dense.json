@@ -1,0 +1,14 @@
+{
+  "id": "test/dense-2b-gguf",
+  "_fixture": "SINTÉTICO: resposta fictícia de /api/models?blobs=true",
+  "siblings": [
+    {"rfilename": "README.md", "size": 1200},
+    {"rfilename": "dense-2b-Q8_0.gguf", "size": 2125000000, "lfs": {"size": 2125000000, "sha256": "00"}},
+    {"rfilename": "dense-2b-Q4_K_M.gguf", "size": 1225000000, "lfs": {"size": 1225000000, "sha256": "00"}},
+    {"rfilename": "F16/dense-2b-F16-00001-of-00002.gguf", "lfs": {"size": 2500000000, "sha256": "00"}},
+    {"rfilename": "F16/dense-2b-F16-00002-of-00002.gguf", "lfs": {"size": 1500000000, "sha256": "00"}},
+    {"rfilename": "dense-2b-Q6_K-00001-of-00002.gguf", "lfs": {"size": 900000000, "sha256": "00"}},
+    {"rfilename": "mmproj-dense-2b-f16.gguf", "lfs": {"size": 600000000, "sha256": "00"}},
+    {"rfilename": "dense-2b-IQ2_M.gguf"}
+  ]
+}

@@ -162,6 +162,83 @@ def _cmd_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+POLICY_PATH = Path(__file__).resolve().parent.parent / "data" / "license_policy.json"
+CATALOG_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "catalog.schema.json"
+
+
+def _utc_today() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _cmd_catalog_add(args: argparse.Namespace) -> int:
+    # Único comando que toca a rede, e só via scout.hf.
+    from scout import hf
+    from scout.catalog import build_entry_with_reasons, upsert
+
+    policy, _ = _read_json(POLICY_PATH, None)
+    path = Path(args.catalog)
+    if path.exists():
+        catalog, _ = _read_json(path, "catalog")
+    else:
+        catalog = {"schema_version": 1, "kind": "catalog", "models": []}
+    try:
+        info = hf.get_model_info(args.repo, offline=args.offline)
+        try:
+            config = hf.get_config(args.repo, offline=args.offline)
+        except hf.HFError as e:
+            if e.reason not in ("gated", "not_found"):
+                raise
+            sys.stderr.write(f"scout: aviso: config.json de {args.repo} indisponível ({e.reason}); "
+                             "campos de arquitetura ficam nulos\n")
+            config = None
+        gguf = hf.get_model_info(args.gguf_repo, blobs=True, offline=args.offline) if args.gguf_repo else None
+    except hf.HFError as e:
+        raise InputError(f"Hugging Face: {e.reason} em {e.url}") from e
+
+    entry, reasons = build_entry_with_reasons(args.repo, info, config, gguf, policy, _utc_today())
+    text = json.dumps(upsert(catalog, entry), sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as e:
+        raise InputError(f"não foi possível escrever {path}: {e.strerror or e}") from e
+    state = "completo" if entry["complete"] else "INCOMPLETO (nunca será recomendado)"
+    sys.stderr.write(f"scout: {entry['id']} gravado em {path}: {state}, {len(entry['quants'])} quants\n")
+    for field in sorted(reasons):
+        sys.stderr.write(f"  {field}: {reasons[field]}\n")
+    if entry["license"] is not None and entry["commercial_ok"] is None:
+        sys.stderr.write(f"  aviso: licença {entry['license']!r} fora de {POLICY_PATH.name}; commercial_ok=null\n")
+    return 0
+
+
+def _cmd_catalog_check(args: argparse.Namespace) -> int:
+    from scout.catalog import check_catalog
+
+    catalog, _ = _read_json(Path(args.catalog), "catalog")
+    today = args.today or _utc_today()
+    try:
+        errors, warnings = check_catalog(catalog, today)
+    except ValueError as e:
+        raise InputError(f"--today inválido: {e}") from e
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:
+        sys.stderr.write("scout: jsonschema ausente; validação de schema pulada\n")
+    else:
+        schema = json.loads(CATALOG_SCHEMA_PATH.read_text(encoding="utf-8"))
+        for e in sorted(Draft202012Validator(schema).iter_errors(catalog), key=lambda e: e.json_path):
+            errors.append(f"schema: {e.json_path}: {e.message}")
+    for w in warnings:
+        sys.stdout.write(f"aviso: {w}\n")
+    for e in errors:
+        sys.stdout.write(f"erro: {e}\n")
+    n = len(catalog.get("models", []))
+    sys.stdout.write(f"{n} modelos, {len(errors)} erros, {len(warnings)} avisos\n")
+    return 1 if errors else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scout", description="Recomenda modelos de IA locais que cabem nesta máquina.")
     parser.add_argument("--version", action="version", version=f"scout {__version__}")
@@ -180,6 +257,18 @@ def build_parser() -> argparse.ArgumentParser:
     col.add_argument("--dmidecode", default=None, metavar="ARQUIVO",
                      help="saída de `sudo dmidecode -t memory` gerada por você (tipo, MT/s e canais da RAM)")
     col.set_defaults(func=_cmd_collect)
+    cat = sub.add_parser("catalog", help="mantém o catálogo a partir da API do Hugging Face")
+    csub = cat.add_subparsers(dest="catalog_command", required=True)
+    add = csub.add_parser("add", help="adiciona ou atualiza um modelo pelo repo do Hugging Face")
+    add.add_argument("repo", help="repo HF <org>/<nome>")
+    add.add_argument("--gguf-repo", default=None, help="repo com os arquivos GGUF")
+    add.add_argument("--catalog", default="data/catalog.json")
+    add.add_argument("--offline", action="store_true", help="só usa o cache local, sem rede")
+    add.set_defaults(func=_cmd_catalog_add)
+    chk = csub.add_parser("check", help="valida o catálogo e avisa dados velhos")
+    chk.add_argument("--catalog", default="data/catalog.json")
+    chk.add_argument("--today", default=None, help="data de referência YYYY-MM-DD (padrão: hoje, UTC)")
+    chk.set_defaults(func=_cmd_catalog_check)
     return parser
 
 

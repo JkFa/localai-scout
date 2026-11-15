@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "kind": "license_policy",
+  "reviewed": false,
+  "description": "RASCUNHO para revisão humana. Chave = cardData.license da API do Hugging Face, em minúsculas. true = uso comercial permitido; false = proibido. Licença fora da tabela => commercial_ok null => bloqueada sob --commercial, sem tornar o modelo incompleto (DECISIONS.md Q4). Só identificadores SPDX inequívocos; licenças custom e 'other' ficam de fora de propósito.",
+  "licenses": {
+    "apache-2.0": true,
+    "mit": true,
+    "bsd-2-clause": true,
+    "bsd-3-clause": true,
+    "cc-by-4.0": true,
+    "cc-by-nc-4.0": false,
+    "cc-by-nc-sa-4.0": false,
+    "cc-by-nc-nd-4.0": false
+  }
+}

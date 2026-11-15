@@ -1,0 +1,7 @@
+{
+  "id": "test/dense-2b",
+  "pipeline_tag": "text-generation",
+  "cardData": {"license": "apache-2.0"},
+  "safetensors": {"parameters": {"BF16": 2000000000}, "total": 2000000000},
+  "_fixture": "SINTÉTICO: resposta fictícia de /api/models, não copiada de repo real"
+}
