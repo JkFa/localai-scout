@@ -126,6 +126,39 @@
       "verified_at": "2026-11-15"
     },
     {
+      "architecture": "qwen3",
+      "commercial_ok": true,
+      "complete": true,
+      "ctx_max": 40960,
+      "gguf_repo": "Qwen/Qwen3-0.6B-GGUF",
+      "head_dim": 128,
+      "id": "Qwen/Qwen3-0.6B",
+      "incomplete_fields": [],
+      "kv_model": "standard",
+      "license": "apache-2.0",
+      "license_source": "https://huggingface.co/Qwen/Qwen3-0.6B",
+      "n_heads": 16,
+      "n_kv_heads": 8,
+      "n_layers": 28,
+      "params_active": 751632384,
+      "params_total": 751632384,
+      "quants": [
+        {
+          "bpw": 6.806,
+          "bpw_source": "file_bytes",
+          "file_bytes": 639446688,
+          "file_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+          "format": "GGUF",
+          "name": "Q8_0"
+        }
+      ],
+      "source_url": "https://huggingface.co/Qwen/Qwen3-0.6B",
+      "tasks": [
+        "chat"
+      ],
+      "verified_at": "2026-11-15"
+    },
+    {
       "architecture": "qwen3_moe",
       "commercial_ok": true,
       "complete": true,
