@@ -79,3 +79,62 @@ da memória e dos tokens/s. Legenda curta no topo do markdown. O teste
 `tests/fixtures/tuning_test.json` (eta 0,75 / 0,60, `max_bpw_offload` 8.5).
 Nenhum teste lê `data/tuning.json`; a CLI nos testes recebe `--tuning`
 (o `nucleo` adiciona a flag ao `plan` e ao `serve`).
+
+---
+
+# Rodada 2 — decisões do humano sobre o fechamento da Fase 7
+
+## R2 — método e confiança da CPU híbrida (`coletor`)
+
+- `source` de `cores_performance`/`cores_efficiency` diz o método:
+  `sysfs:cpu_core/cpu_atom`, `lscpu:maxmhz_grouping (separação X%)`, ou
+  `undetermined`.
+- Confiança por método: sysfs → high; agrupamento por frequência → medium;
+  indeterminado → low. Agrupamento nunca sai high.
+- Limiar de 15% aprovado.
+- DECISIONS.md, limitação conhecida (não implementar): em Intel híbrido os
+  E-cores compartilham L2 em grupos de quatro e os P-cores têm L2 próprio;
+  sinal estrutural em `/sys/devices/system/cpu/cpu*/cache/`, que sobrevive em
+  container com mais frequência que cpufreq.
+
+## R3 — limiar de offload nunca silencioso (`nucleo` + `web`)
+
+- Quando o limiar descarta o `hybrid` de uma quant e o modelo ainda entra por
+  outro placement ou por outra quant, o candidato vencedor carrega
+  `notes: [{"code": "offload_skipped_above_bpw", "message": "..."}]` (campo
+  opcional no schema; lista, ordem determinística). Mensagem do tipo:
+  "FP16 híbrido descartado: acima de 8,5 bpw o offload não traz ganho
+  perceptível; Q8_0 cabe inteiro na GPU." Os números da mensagem saem do
+  tuning e do candidato, nunca fixos no texto.
+- NÃO cria entrada em `rejected`.
+- `web/render.js` mostra as `notes` do candidato na linha dele. O markdown da
+  CLI também.
+
+## R4 — banda de GPU: valor real, fórmula como fallback (`coletor`)
+
+- `data/bandwidth_tables.json` ganha a seção `gpu`, chaveada pelo NOME EXATO
+  que `nvidia-smi`/`rocm-smi` devolvem. Por entrada: `bus_width_bits`,
+  `data_rate_gbps`, `bandwidth_bytes_s` (já calculado), `source_url` da página
+  do fabricante. `data/gpu_bandwidth.json` deixa de existir.
+- Resolução: nome na tabela → `bandwidth_bytes_s`, confiança high; fora da
+  tabela com barramento conhecido e clock legível → fórmula com o multiplicador
+  do fabricante, confiança medium; nada → null, low (o desempate F4 assume).
+- Multiplicador por fabricante (nvidia-smi, rocm-smi) validado reproduzindo a
+  banda publicada de uma placa conhecida; se a conta não bater com o número
+  oficial, não grava.
+- Escopo: só as GPUs dos cinco fixtures e a da máquina do humano.
+- Nenhum número de memória. Cada entrada vem de busca com URL gravada. A lista
+  de placas com URLs é mostrada ao humano ANTES de gravar.
+
+## R5 — PROMPT.md é a regra (`nucleo`)
+
+- Seção "Algoritmo de geração de candidatos" do PROMPT.md passa a conter o
+  desempate F4, o limiar Fa e a nota R3. A fórmula de `n_gpu` passa a ter o
+  teto 0,95 (Q6, Fase 0), hoje só no código e no DECISIONS.md. Vai no mesmo
+  commit do código de R3.
+
+## R8 — testes nunca referenciam data/ (`qa`)
+
+- Teste que varre `tests/` e falha se qualquer arquivo referenciar `data/`
+  (exceto o próprio teste). Testes que hoje validam arquivos reais de `data/`
+  saem; essa validação vive no carregador em runtime ou num comando `check`.

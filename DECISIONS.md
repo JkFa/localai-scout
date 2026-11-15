@@ -555,3 +555,35 @@ Ausente (rejeição antes do cálculo) = `calculated` para o frontend.
   oficiais conferidas hoje (nvidia.com: RTX 3060/3060 Ti, 4060/4060 Ti, 4070, 4090; amd.com: RX 7800 XT, ir.amd.com e
   rocm.docs.amd.com) trazem largura de barramento, mas nenhuma traz GB/s (NVIDIA) ou não carregou/não traz o número (AMD).
   Entradas ficam para o humano com fonte oficial que traga o número.
+
+## 2026-11-15 — Fase 7 rodada 2 (coletor): R2
+
+`source` de `cores_performance`/`cores_efficiency` diz o método: `sysfs:cpu_core/cpu_atom` (high),
+`lscpu:maxmhz_grouping (separação X%)` (medium; X = 1 - f_lento/f_rápido, medido; limiar 15% aprovado) ou
+`undetermined` (low). **Limitação conhecida, não implementada:** em Intel híbrido os E-cores compartilham L2 em
+grupos de quatro e os P-cores têm L2 próprio; esse sinal estrutural está em
+`/sys/devices/system/cpu/cpu*/cache/` e sobrevive em container com mais frequência que cpufreq. Candidato a
+terceiro método de detecção.
+
+## 2026-11-15 — limiar de offload nunca silencioso (R3) e PROMPT.md como regra (R5)
+
+**Contexto.** Na rodada 1, o limiar `max_bpw_offload` só deixava rastro quando
+a quant não cabia em nenhum placement; se o modelo entrava por outro placement
+ou outra quant, o descarte do hybrid sumia. O humano recusou essa
+interpretação.
+
+**Decisão (humano, m7_fixes.md R3/R5).**
+- O hybrid acima do limiar continua sendo CALCULADO, só para saber se seria
+  viável; nunca entra na escolha. Se seria viável e o modelo entra mesmo
+  assim, o candidato vencedor leva `notes: [{"code":
+  "offload_skipped_above_bpw", "message": ...}]` (opcional no schema), uma por
+  quant descartada, na ordem de avaliação. A mensagem diz a quant
+  descartada, o limiar (do tuning, com ponto decimal como o resto do
+  relatório) e onde o vencedor roda. Nenhuma entrada em `rejected`.
+- Se a quant não coube em gpu_full nem cpu_only e o hybrid seria viável:
+  `skipped_quants` com `bpw_above_offload_limit` (e a nota vai para o
+  vencedor). Se o hybrid não seria viável, o limiar não mudou nada:
+  `does_not_fit`, sem nota.
+- O markdown da CLI mostra as notes na coluna de nota do candidato.
+- PROMPT.md M1 agora contém, no algoritmo de candidatos, o desempate F4, o
+  limiar Fa e a nota R3, e a fórmula de `n_gpu` com o teto 0,95 (Q6).

@@ -382,6 +382,29 @@ def _choose(viable: list[Attempt]) -> Attempt:
     return sorted(viable, key=lambda a: (-a.tps, E.TIERS.index(a.tier), PLACEMENTS.index(a.placement)))[0]
 
 
+def _fmt_num(x: float) -> str:
+    """8.5 -> "8.5". Ponto decimal como no resto do relatório, para que o número
+    do texto bata com inputs.tuning.max_bpw_offload no JSON."""
+    return f"{x:g}"
+
+
+def _offload_note(dropped: str, q: dict, chosen: Attempt, n_layers: int,
+                  limit: float | None) -> dict[str, str]:
+    """Nota R3 (m7_fixes.md): híbrido descartado pelo limiar max_bpw_offload."""
+    if chosen.placement == "gpu_full":
+        where = "cabe inteiro na GPU"
+    elif chosen.placement == "cpu_only":
+        where = "roda só na CPU"
+    else:
+        where = f"roda em offload com {chosen.n_gpu} de {n_layers} camadas na GPU"
+    winner = "a mesma quant" if dropped == q["name"] else q["name"]
+    return {
+        "code": "offload_skipped_above_bpw",
+        "message": (f"{dropped} híbrido descartado: acima de {_fmt_num(limit or 0)} bpw o offload "
+                    f"não traz ganho perceptível; {winner} {where}."),
+    }
+
+
 def _round_tps(x: float | None) -> float | None:
     if x is None:
         return None
@@ -439,6 +462,7 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
     buf = E.buffer_bytes(ctx)
 
     skipped: list[dict[str, Any]] = []
+    dropped_quants: list[str] = []  # quants cujo híbrido viável o limiar descartou (R3)
     closest: tuple[Attempt, dict] | None = None
     for q in sorted(m["quants"], key=_quant_order):
         sq = {"format": q["format"], "name": q["name"]}
@@ -463,13 +487,24 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
         # derrubaria a velocidade; vale mais uma quant menor inteira na GPU).
         hybrid_blocked = (max_bpw_offload is not None and bpw > max_bpw_offload
                           and q["format"] == "GGUF" and "gpu" in pools and "cpu" in pools)
-        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools,
-                             allow_hybrid=not hybrid_blocked)
+        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools)
+        # R3: o limiar nunca é silencioso. O híbrido é calculado só para saber se
+        # o limiar descartou algo que caberia; ele não entra na escolha.
+        offload_dropped = False
+        if hybrid_blocked:
+            dropped = [a for a in attempts if a.placement == "hybrid"]
+            attempts = [a for a in attempts if a.placement != "hybrid"]
+            offload_dropped = any(a.tier != "inviavel" for a in dropped)
         viable = [a for a in attempts if a.tier != "inviavel"]
         if viable:
             chosen = _choose(viable)
+            if offload_dropped:
+                dropped_quants.append(q["name"])
             cand = _candidate(ref, m, q, chosen, weights, kv, buf, fallback, skipped,
                               intent, tuning_default, n_threads)
+            if dropped_quants:
+                cand["notes"] = [_offload_note(name, q, chosen, n_layers, max_bpw_offload)
+                                 for name in dropped_quants]
             if embed_only:
                 cand["ctx_effective"] = ctx
             cand["_rank"] = (chosen.bytes_cpu_per_token, chosen.bytes_per_token)
@@ -479,8 +514,9 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
                 closest = (a, q)
         if q["format"] in FULL_GPU_FORMATS:
             reason = "format_requires_full_gpu"
-        elif hybrid_blocked:
-            reason = "bpw_above_offload_limit"  # o híbrido poderia caber, mas não é avaliado
+        elif offload_dropped:
+            reason = "bpw_above_offload_limit"  # o híbrido caberia, mas não é avaliado
+            dropped_quants.append(q["name"])
         else:
             reason = "does_not_fit"
         skipped.append({**sq, "reason_code": reason})

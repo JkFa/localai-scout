@@ -113,15 +113,15 @@ Offload de camadas (só GGUF; EXL2, AWQ e GPTQ exigem residência total em GPU
 e devem ser rejeitados quando não couberem inteiros):
 
   bytes_camada = weights / n_layers
-  n_gpu = floor((vram_usable - kv_gpu - buffer_gpu) / bytes_camada)
+  n_gpu = floor((floor(0.95 * vram_usable) - kv_gpu - buffer_gpu) / bytes_camada)
   n_gpu = max(0, min(n_gpu, n_layers))
 
-Quant acima do limiar não vale offload: se bpw > max_bpw_offload (em
-data/tuning.json, valor inicial 8.5, nunca fixo no código), o placement
-hybrid não é avaliado para essa quant e, se ela não couber em gpu_full nem em
-cpu_only, sai em skipped_quants com motivo bpw_above_offload_limit. gpu_full e
-cpu_only continuam avaliados. A banda da CPU derrubaria a velocidade; vale
-mais uma quant menor inteira na GPU (DECISIONS.md, Fase 7).
+O teto de 0.95 é o mesmo corte do tier "limite": sem ele o offload encheria a
+VRAM a 100% e todo híbrido cairia em "inviavel" (DECISIONS.md, Q6). No
+híbrido, o KV inteiro e o buffer ficam no lado da GPU.
+
+Quant acima de max_bpw_offload não é avaliada em hybrid: ver o limiar de
+offload no algoritmo de geração de candidatos, abaixo.
 
 Throughput, somando os dois trechos:
 
@@ -167,12 +167,40 @@ modelo MENOR em bpw ALTO ao modelo maior em bpw destrutivo.
           se bpw < piso(params_total)              -> pular com motivo
           para cada placement em [gpu_full, hybrid, cpu_only]:
               se o formato não permite o placement -> pular
+              se placement == hybrid e bpw > max_bpw_offload
+                                                   -> não avaliar (limiar)
               calcular mem, tier e tokens_per_s
           se houver placement viável:
-              escolher o de maior tokens_per_s
+              escolher o de maior tokens_per_s     (desempate abaixo)
               registrar candidato e PARAR as quants deste modelo
-  ordenar por (tier, tokens_per_s desc)
+  ordenar por (tier, tokens_per_s desc, bytes_cpu_por_token asc,
+               bytes_por_token asc, model_id asc)
   modelo sem nenhum candidato entra em rejected com motivo e bytes faltantes
+
+Desempate quando tokens_per_s é desconhecido (banda null). Na escolha do
+placement, se algum placement viável tem tokens_per_s null, vence o de menor
+bytes_cpu_por_token = bytes_camada_lidos * (n_layers - n_gpu) (MoE: com a
+fração ativa); empate pelo menor bytes_por_token total; depois a ordem fixa
+gpu_full, hybrid, cpu_only. Na ordenação dos candidatos e na escolha do
+principal por tarefa vale a chave acima, que só muda a ordem entre candidatos
+com tokens_per_s null. Esses bytes são só critério de ordem, nunca exibidos
+como velocidade; o candidato recebe o motivo ranked_by_bytes em
+confidence_reasons.
+
+Limiar de offload. Se bpw > max_bpw_offload (em data/tuning.json, valor
+inicial 8.5, nunca fixo no código), o placement hybrid não é avaliado para
+essa quant; gpu_full e cpu_only continuam. A banda da CPU derrubaria a
+velocidade; vale mais uma quant menor inteira na GPU. O limiar nunca é
+silencioso: se o hybrid descartado teria sido viável e
+  - a quant não coube em gpu_full nem em cpu_only: ela sai em skipped_quants
+    com motivo bpw_above_offload_limit;
+  - o modelo ainda entra (por outro placement da mesma quant ou por quant
+    menor): o candidato vencedor leva em notes
+    {"code": "offload_skipped_above_bpw", "message": ...}, uma nota por quant
+    descartada, na ordem de avaliação. A mensagem diz a quant descartada, o
+    limiar (vindo do tuning) e onde o vencedor roda.
+  Nenhum dos dois casos cria entrada em rejected. Se o hybrid descartado não
+  teria sido viável, o limiar não mudou nada e não há nota.
 
 Parar na primeira quant viável garante ao usuário a melhor qualidade que cabe,
 não a menor que cabe. Um candidato blocked continua no relatório, marcado,

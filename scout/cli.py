@@ -109,6 +109,7 @@ def render_markdown(f: dict) -> str:
                 notes.append("preterido por qualidade (ver avisos)")
             if c["primary_for"]:
                 notes.append("principal: " + ", ".join(c["primary_for"]))
+            notes += [n["message"] for n in c.get("notes", [])]
             if "ctx_effective" in c:
                 notes.append(f"contexto efetivo: {c['ctx_effective']} tokens")
             if c["blocked"]:
