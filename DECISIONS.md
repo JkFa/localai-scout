@@ -449,3 +449,25 @@ sai != 0 se o id não existir. Usado para remover
 
 **Decisão (humano).** `catalog.schema.json`: `quant.bpw.maximum` 32 → 40.
 `gguf_quants` só anula bpw fora de (0, 40], com aviso no `catalog add`.
+
+## 2026-11-15 — Fase 4: detalhes do backend não cobertos por A1–A15
+
+**Decisão (agente `backend`).**
+- `scout serve --port` e `--catalog` (padrão `data/catalog.json`); sem `--host`. Porta ocupada falha com
+  erro, sem tentar outra. `ScoutServer(port, token, catalog_path, origins, collect_fn)` aceita porta 0 e
+  coleta injetável só para testes; bind sempre 127.0.0.1.
+- Ordem de validação: Host (403) → Origin (403) → OPTIONS responde → token (401, inclusive para rota
+  inexistente, para não permitir sondar rotas) → 404/405 → Content-Type (415) → Content-Length (411/413) → JSON.
+- Requisição sem Origin passa (A3); respostas de erro também levam o CORS exato quando o Origin é permitido,
+  para o navegador conseguir ler o erro. OPTIONS dispensa token (preflight não carrega credencial).
+- Coleta ao vivo é preguiçosa: roda na primeira chamada a /system ou /plan sem `system`, fica em cache;
+  `/system?refresh=1` recoleta. (A6 dizia "desde o start"; evita travar a abertura do servidor.)
+- `/plan`: `intent` exigido, só campos tasks/ctx/commercial_use/batch/kv_quant (desconhecido → 400);
+  `tasks` ausente = todas as do catálogo (como a CLI); `system` do cliente precisa ser kind=system,
+  schema_version=1, senão 400 `schema_invalid`. Se o solver falhar com KeyError/TypeError num `system` do
+  cliente, vira 400; na coleta ao vivo vira 500 `internal`.
+- `/bench`: `{model_id}` precisa estar no catálogo (404 senão); resposta
+  `{command: "scout bench --run <id>", ran: false, missing: ["model_file_path","runtime"]}`; `run: true` → 501.
+- Sem Content-Length em POST → 411 com code `bad_request` (como A7). Helpers `load_tuning` e `run_plan`
+  extraídos de `scout/cli.py` (plan inalterado).
+- Log: stderr, uma linha `METHOD path -> status`, sem query, sem cabeçalhos, sem corpo.

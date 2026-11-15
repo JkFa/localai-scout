@@ -123,26 +123,45 @@ def render_markdown(f: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _cmd_plan(args: argparse.Namespace) -> int:
-    system, _ = _read_json(Path(args.system), "system")
-    catalog, catalog_raw = _read_json(Path(args.catalog), "catalog")
+def load_tuning() -> dict:
     tuning, _ = _read_json(TUNING_PATH, None)
     if not isinstance(tuning, dict) or "eta_gpu" not in tuning or "eta_cpu" not in tuning:
         raise InputError(f"{TUNING_PATH}: faltam eta_gpu/eta_cpu")
+    return tuning
+
+
+def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, intent: Intent) -> dict:
+    """solve + identificação do catálogo pelos bytes exatos do arquivo lido (schema)."""
+    result = solve(system, catalog, intent, tuning)
+    result["inputs"]["catalog"]["sha256"] = hashlib.sha256(catalog_raw).hexdigest()
+    return result
+
+
+def _cmd_plan(args: argparse.Namespace) -> int:
+    system, _ = _read_json(Path(args.system), "system")
+    catalog, catalog_raw = _read_json(Path(args.catalog), "catalog")
+    tuning = load_tuning()
     if args.ctx < 1:
         raise InputError("--ctx precisa ser >= 1")
     intent = Intent(tasks=_parse_tasks(args.task, catalog), ctx=args.ctx, commercial_use=args.commercial)
     try:
-        result = solve(system, catalog, intent, tuning)
+        result = run_plan(system, catalog, catalog_raw, tuning, intent)
     except ValueError as e:
         raise InputError(str(e)) from e
-    # Identifica o catálogo pelos bytes exatos do arquivo lido (schema).
-    result["inputs"]["catalog"]["sha256"] = hashlib.sha256(catalog_raw).hexdigest()
     if args.json:
         sys.stdout.write(json.dumps(result, sort_keys=True, indent=2) + "\n")
     else:
         sys.stdout.write(render_markdown(result))
     return 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from scout import server
+
+    try:
+        return server.serve(args.port, Path(args.catalog))
+    except OSError as e:
+        raise InputError(f"não foi possível abrir 127.0.0.1:{args.port}: {e.strerror or e}") from e
 
 
 def _cmd_collect(args: argparse.Namespace) -> int:
@@ -164,6 +183,7 @@ def _cmd_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+CATALOG_DEFAULT = Path(__file__).resolve().parent.parent / "data" / "catalog.json"
 POLICY_PATH = Path(__file__).resolve().parent.parent / "data" / "license_policy.json"
 OVERRIDES_PATH = Path(__file__).resolve().parent.parent / "data" / "task_overrides.json"
 CATALOG_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "catalog.schema.json"
@@ -284,6 +304,10 @@ def build_parser() -> argparse.ArgumentParser:
     col.add_argument("--dmidecode", default=None, metavar="ARQUIVO",
                      help="saída de `sudo dmidecode -t memory` gerada por você (tipo, MT/s e canais da RAM)")
     col.set_defaults(func=_cmd_collect)
+    srv = sub.add_parser("serve", help="backend local para o frontend (só 127.0.0.1, com token)")
+    srv.add_argument("--port", type=int, default=8765, help="porta em 127.0.0.1 (padrão 8765; falha se ocupada)")
+    srv.add_argument("--catalog", default=str(CATALOG_DEFAULT), help="catálogo de modelos")
+    srv.set_defaults(func=_cmd_serve)
     cat = sub.add_parser("catalog", help="mantém o catálogo a partir da API do Hugging Face")
     csub = cat.add_subparsers(dest="catalog_command", required=True)
     add = csub.add_parser("add", help="adiciona ou atualiza um modelo pelo repo do Hugging Face")
