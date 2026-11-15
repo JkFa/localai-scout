@@ -8,68 +8,6 @@
         {
           "budget_bytes": 5589934592,
           "buffer_bytes": 563840000,
-          "kv_bytes": 301989888,
-          "pool": "cpu",
-          "tier": "confortavel",
-          "total_bytes": 1085829888,
-          "weights_bytes": 220000000
-        }
-      ],
-      "confidence": "medium",
-      "confidence_reasons": [
-        "eta_default",
-        "ttft_unspecified"
-      ],
-      "ctx_effective": 8192,
-      "kv_bytes": 301989888,
-      "model": {
-        "commercial_ok": true,
-        "id": "test/embed-110m",
-        "license": "mit",
-        "license_source": "https://example.invalid/test/embed-110m",
-        "n_layers": 12,
-        "params_active": 110000000,
-        "params_total": 110000000,
-        "source_url": "https://example.invalid/test/embed-110m",
-        "tasks": [
-          "embeddings"
-        ]
-      },
-      "n_gpu_layers": 0,
-      "n_threads": 4,
-      "placement": "cpu_only",
-      "primary_for": [
-        "embeddings"
-      ],
-      "provenance": {
-        "buffer_bytes": "calculated",
-        "kv_bytes": "calculated",
-        "n_gpu_layers": "calculated",
-        "tokens_per_s_est": "estimated",
-        "total_bytes": "calculated",
-        "weights_bytes": "catalog"
-      },
-      "quant": {
-        "bpw": 16.0,
-        "file_bytes": 220000000,
-        "format": "GGUF",
-        "name": "F16"
-      },
-      "skipped_quants": [],
-      "tier": "confortavel",
-      "tokens_per_s_est": 58.17,
-      "total_bytes": 1085829888,
-      "ttft_s_est": null,
-      "weights_bytes": 220000000
-    },
-    {
-      "blocked": false,
-      "blocked_reason": null,
-      "buffer_bytes": 563840000,
-      "by_pool": [
-        {
-          "budget_bytes": 5589934592,
-          "buffer_bytes": 563840000,
           "kv_bytes": 268435456,
           "pool": "cpu",
           "tier": "confortavel",
@@ -124,6 +62,74 @@
       "total_bytes": 2298525456,
       "ttft_s_est": null,
       "weights_bytes": 1466250000
+    },
+    {
+      "blocked": false,
+      "blocked_reason": null,
+      "buffer_bytes": 563840000,
+      "by_pool": [
+        {
+          "budget_bytes": 5589934592,
+          "buffer_bytes": 563840000,
+          "kv_bytes": 301989888,
+          "pool": "cpu",
+          "tier": "confortavel",
+          "total_bytes": 1085829888,
+          "weights_bytes": 220000000
+        }
+      ],
+      "confidence": "high",
+      "confidence_reasons": [
+        "decode_not_applicable",
+        "ttft_unspecified"
+      ],
+      "ctx_effective": 8192,
+      "kv_bytes": 301989888,
+      "model": {
+        "commercial_ok": true,
+        "id": "test/embed-110m",
+        "license": "mit",
+        "license_source": "https://example.invalid/test/embed-110m",
+        "n_layers": 12,
+        "params_active": 110000000,
+        "params_total": 110000000,
+        "source_url": "https://example.invalid/test/embed-110m",
+        "tasks": [
+          "embeddings"
+        ]
+      },
+      "n_gpu_layers": 0,
+      "n_threads": 4,
+      "notes": [
+        {
+          "code": "decode_not_applicable",
+          "message": "Embeddings n\u00e3o geram texto token a token: tokens/s de decode n\u00e3o se aplica. A m\u00e9trica aplic\u00e1vel \u00e9 o throughput de prefill (tokens processados por segundo), ainda n\u00e3o estimado."
+        }
+      ],
+      "placement": "cpu_only",
+      "primary_for": [
+        "embeddings"
+      ],
+      "provenance": {
+        "buffer_bytes": "calculated",
+        "kv_bytes": "calculated",
+        "n_gpu_layers": "calculated",
+        "tokens_per_s_est": "estimated",
+        "total_bytes": "calculated",
+        "weights_bytes": "catalog"
+      },
+      "quant": {
+        "bpw": 16.0,
+        "file_bytes": 220000000,
+        "format": "GGUF",
+        "name": "F16"
+      },
+      "skipped_quants": [],
+      "tier": "confortavel",
+      "tokens_per_s_est": null,
+      "total_bytes": 1085829888,
+      "ttft_s_est": null,
+      "weights_bytes": 220000000
     }
   ],
   "excluded": {
@@ -371,6 +377,13 @@
       "eta_cpu": 0.6,
       "eta_gpu": 0.75,
       "max_bpw_offload": 8.5,
+      "prefill_reference": {
+        "date": "2026-11-15",
+        "measured_on": "AMD Ryzen 5 7520U, 4 n\u00facleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens",
+        "power": "AC, performance",
+        "tokens_per_s": 11.7,
+        "tool": "ollama 0.17.6 API"
+      },
       "source": "default"
     }
   },
@@ -537,6 +550,11 @@
       "code": "hdd_storage",
       "field": "disks.value[0].kind",
       "message": "Disco rotativo em /: carregar o modelo ser\u00e1 lento.",
+      "severity": "warn"
+    },
+    {
+      "code": "slow_prefill_cpu",
+      "message": "Processar o prompt na CPU \u00e9 lento (1 candidato(s) com a maioria das camadas na CPU: test/tiny-1b). Medi\u00e7\u00e3o de refer\u00eancia: ~12 tokens/s de prefill em AMD Ryzen 5 7520U, 4 n\u00facleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens (ollama 0.17.6 API, 2026-11-15); nesse ritmo, um prompt de 700 tokens leva perto de um minuto. Outra m\u00e1quina ou outro modelo mudam esse n\u00famero; o tempo at\u00e9 o primeiro token n\u00e3o \u00e9 estimado.",
       "severity": "warn"
     }
   ]

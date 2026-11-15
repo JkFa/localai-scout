@@ -37,6 +37,8 @@ const CONF_REASON = {
   hardware_low_confidence: "hardware lido com baixa confiança",
   eta_default: "eficiência padrão, não calibrada nesta máquina",
   ttft_unspecified: "tempo até o primeiro token não especificado",
+  ranked_by_bytes: "ordenado por tamanho em bytes (banda desconhecida)",
+  decode_not_applicable: "embeddings não geram tokens",
 };
 const REJECT = {
   ctx_exceeds_max: "contexto acima do máximo do modelo",
@@ -138,7 +140,14 @@ function poolsTable(pools) {
 
 function warningsList(ws) {
   if (!ws.length) return h("p", {}, "Nenhum aviso.");
-  return h("ul", { class: "warnings" }, ws.map((w) => h("li", { class: "warn-" + (w.severity === "warn" ? "warn" : "info") }, h("strong", {}, w.severity === "warn" ? "Atenção: " : "Nota: "), String(w.message))));
+  return h("ul", { class: "warnings" }, ws.map((w) => h("li", { class: "warn-" + (w.severity === "warn" ? "warn" : "info") }, h("strong", {}, w.severity === "warn" ? "⚠ Atenção: " : "Nota: "), String(w.message))));
+}
+
+// Avisos de nível warn repetidos junto das recomendações (o schema não liga aviso a candidato).
+export function warnBanner(doc) {
+  const ws = doc.warnings.filter((w) => w && w.severity === "warn" && typeof w.message === "string");
+  if (!ws.length) return null;
+  return h("div", { class: "banner banner-warn", role: "note" }, h("strong", {}, "⚠ Avisos que afetam estas recomendações"), h("ul", { class: "warnings" }, ws.map((w) => h("li", {}, w.message))));
 }
 
 export function renderDiagnostic(doc, kind) {
@@ -166,6 +175,10 @@ function confBadge(c) {
 function tpsCell(c) {
   const t = c.tokens_per_s_est;
   const reasons = (c.confidence_reasons || []).map((r) => CONF_REASON[r] || r);
+  const noDecode = (c.confidence_reasons || []).includes("decode_not_applicable") || (Array.isArray(c.notes) && c.notes.some((n) => n && n.code === "decode_not_applicable"));
+  if ((t === null || t === undefined) && noDecode) {
+    return h("td", {}, h("em", { class: "unknown" }, "não se aplica (embeddings não geram tokens)"));
+  }
   if (t === null || t === undefined) {
     return h("td", {}, h("em", { class: "unknown" }, "desconhecido"), h("div", { class: "muted small" }, reasons.length ? `Motivo: ${reasons.join("; ")}.` : "Motivo não informado."));
   }
@@ -232,6 +245,8 @@ export function recommendationGroups(doc, opts) {
 export function renderRecommendationBody(doc, opts) {
   const { groups, hidden } = recommendationGroups(doc, opts);
   const kids = [];
+  const wb = warnBanner(doc);
+  if (wb) kids.push(wb);
   if (!doc.candidates.length) kids.push(h("div", { class: "banner banner-warn", role: "note" }, "Nenhum modelo coube nesta máquina com estas configurações. Veja a seção Rejeitados."));
   if (hidden) kids.push(h("p", { class: "muted" }, `${hidden} linha(s) escondida(s) pelo filtro de uso comercial (licença não comercial, bloqueada ou desconhecida).`));
   for (const g of groups) {
