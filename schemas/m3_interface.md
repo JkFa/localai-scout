@@ -60,4 +60,4 @@ Comandos (em `scout/cli.py`):
 - Nada é preenchido de memória. Campo que não veio da API fica `null`, com
   motivo, e o modelo recebe `complete: false`.
 - `tasks`: derivado de `pipeline_tag` da API por tabela explícita no código;
-  tag desconhecida → `tasks` vazio e modelo incompleto.
+  tag desconhecida → `tasks: null` (o schema exige ao menos uma tarefa) e modelo incompleto.
