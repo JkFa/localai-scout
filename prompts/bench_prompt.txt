@@ -1,0 +1,13 @@
+Read the following notes about running language models on a personal computer and then write a short summary of them in your own words.
+
+Generating one token with a dense transformer requires reading every weight of the model from memory once. For that reason the speed of text generation on a machine without a dedicated accelerator is limited mostly by how many bytes per second the memory system can deliver, not by how many arithmetic operations the processor can perform. Doubling the size of the weights roughly halves the number of tokens produced each second, as long as the same memory path is used.
+
+Processing the prompt is a different workload. All prompt tokens can be handled in parallel, so the weights are read once for a whole batch of tokens, and the limiting factor becomes arithmetic throughput. This is why the first token of a long answer can take much longer to appear than every following token, and why the time to first token grows with the length of the prompt.
+
+The context window also consumes memory. For every token kept in context the runtime stores a key and a value vector for each layer. With a long context this cache can be as large as a small model, so choosing a context length is a trade between how much text the model can remember and how much memory is left for the weights themselves.
+
+Quantization reduces the number of bits used for each weight. A model stored with four to five bits per weight needs about a quarter of the memory of the same model stored in sixteen bits, and it is read faster for the same reason. The price is a small loss of accuracy that depends on the method and on the model, and that is usually acceptable for everyday chat and coding assistance.
+
+When a model does not fit entirely in the memory of the graphics card, some of its layers can stay in the system memory. Every generated token then has to wait for the slow part, so the overall speed is dominated by the layers that run on the processor. Measuring the real speed on the real machine is the only reliable way to know what to expect, because laptops change their clock speeds depending on temperature, on the power profile and on whether the battery is in use.
+
+Please summarize the notes above in five sentences and mention at least one practical consequence for someone choosing a model for a laptop.
