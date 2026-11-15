@@ -56,11 +56,12 @@ class ScoutServer(ThreadingHTTPServer):
 
     def __init__(self, port: int, token: str, catalog_path: Path,
                  origins: frozenset[str] | None = None,
-                 collect_fn: Callable[[], dict] | None = None) -> None:
+                 collect_fn: Callable[[], dict] | None = None,
+                 tuning_path: Path | None = None) -> None:
         self.token = token
         self.origins = allowed_origins() if origins is None else origins
         self.catalog, self.catalog_raw = _read_json(catalog_path, "catalog")
-        self.tuning = load_tuning()
+        self.tuning = load_tuning(tuning_path)
         if collect_fn is None:
             from scout.collect import collect
 
@@ -256,9 +257,9 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write(f"scout: {self.command} {urlsplit(self.path).path} -> {args[1] if len(args) > 1 else '-'}\n")
 
 
-def serve(port: int, catalog_path: Path) -> int:
+def serve(port: int, catalog_path: Path, tuning_path: Path | None = None) -> int:
     token = secrets.token_urlsafe(32)
-    httpd = ScoutServer(port, token, catalog_path)  # OSError se a porta estiver ocupada
+    httpd = ScoutServer(port, token, catalog_path, tuning_path=tuning_path)  # OSError se a porta estiver ocupada
     sys.stdout.write(
         f"scout serve em http://127.0.0.1:{httpd.port} (Ctrl+C encerra)\n\n"
         f"Token (muda a cada start): {token}\n"

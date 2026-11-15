@@ -116,6 +116,13 @@ e devem ser rejeitados quando não couberem inteiros):
   n_gpu = floor((vram_usable - kv_gpu - buffer_gpu) / bytes_camada)
   n_gpu = max(0, min(n_gpu, n_layers))
 
+Quant acima do limiar não vale offload: se bpw > max_bpw_offload (em
+data/tuning.json, valor inicial 8.5, nunca fixo no código), o placement
+hybrid não é avaliado para essa quant e, se ela não couber em gpu_full nem em
+cpu_only, sai em skipped_quants com motivo bpw_above_offload_limit. gpu_full e
+cpu_only continuam avaliados. A banda da CPU derrubaria a velocidade; vale
+mais uma quant menor inteira na GPU (DECISIONS.md, Fase 7).
+
 Throughput, somando os dois trechos:
 
   t_tok = (bytes_camada * n_gpu) / (bw_gpu * eta_gpu)

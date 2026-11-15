@@ -84,6 +84,9 @@ class Attempt:
     tps: float | None
     pools_used: tuple[Pool, ...]
     missing: int  # bytes para chegar ao tier limite; <= 0 se cabe
+    # Critério de ordem quando tokens/s é null (m7_fixes.md F4). Nunca exibidos.
+    bytes_cpu_per_token: int = 0  # bytes lidos da RAM por token (MoE: fração ativa)
+    bytes_per_token: int = 0      # bytes lidos por token, total
 
 
 # --------------------------------------------------------------------------
@@ -323,8 +326,12 @@ def _attempts(
     n_layers: int,
     layer_bytes_read: int,
     pools: dict[str, Pool],
+    allow_hybrid: bool = True,
 ) -> list[Attempt]:
-    """Todas as tentativas calculáveis de um (modelo, quant), em ordem de PLACEMENTS."""
+    """Todas as tentativas calculáveis de um (modelo, quant), em ordem de PLACEMENTS.
+
+    allow_hybrid=False: quant acima de max_bpw_offload (m7_fixes.md Fa).
+    """
     out: list[Attempt] = []
     gpu = pools.get("gpu") or pools.get("unified")
     cpu = pools.get("cpu")
@@ -339,7 +346,8 @@ def _attempts(
 
     def make(placement: str, n_gpu: int, usages: tuple[dict[str, Any], ...], used: tuple[Pool, ...]) -> Attempt:
         return Attempt(placement, n_gpu, usages, weights + kv + buf, _worst_tier(usages),
-                       tps(n_gpu), used, _missing(usages))
+                       tps(n_gpu), used, _missing(usages),
+                       layer_bytes_read * (n_layers - n_gpu), layer_bytes_read * n_layers)
 
     # gpu_full (ou o pool unificado inteiro)
     if gpu is not None:
@@ -349,7 +357,7 @@ def _attempts(
         return out  # EXL2/AWQ/GPTQ: só residência total na GPU
 
     # hybrid: KV inteiro e buffer no lado GPU (m1_interface.md)
-    if gpu is not None and gpu.id == "gpu" and cpu is not None:
+    if allow_hybrid and gpu is not None and gpu.id == "gpu" and cpu is not None:
         n_gpu = E.n_gpu_layers(weights, n_layers, gpu.usable, kv, buf)
         if 1 <= n_gpu < n_layers:
             w_gpu = bytes_camada * n_gpu
@@ -364,12 +372,13 @@ def _attempts(
 def _choose(viable: list[Attempt]) -> Attempt:
     """Maior tokens/s entre os placements viáveis.
 
-    Se algum tokens/s é desconhecido (banda null), a comparação não é
-    definida; cai para a ordem gpu_full > hybrid > cpu_only em vez de
-    preferir a CPU só porque a banda da GPU não foi medida.
+    Se algum tokens/s é desconhecido (banda null), vence o de menos bytes
+    lidos da RAM por token, depois menos bytes por token no total, depois a
+    ordem gpu_full > hybrid > cpu_only (m7_fixes.md F4; DECISIONS.md).
     """
     if any(a.tps is None for a in viable):
-        return viable[0]  # viable já está em ordem de PLACEMENTS
+        return sorted(viable, key=lambda a: (a.bytes_cpu_per_token, a.bytes_per_token,
+                                             PLACEMENTS.index(a.placement)))[0]
     return sorted(viable, key=lambda a: (-a.tps, E.TIERS.index(a.tier), PLACEMENTS.index(a.placement)))[0]
 
 
@@ -386,7 +395,8 @@ def _quant_order(q: dict) -> tuple:
 
 
 def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_default: bool,
-                    n_threads: int | None) -> tuple[dict | None, dict | None]:
+                    n_threads: int | None, max_bpw_offload: float | None = None
+                    ) -> tuple[dict | None, dict | None]:
     """Devolve (candidato, None) ou (None, rejeitado)."""
     ref = _model_ref(m)
 
@@ -404,6 +414,9 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
             },
             "missing_bytes": None if closest is None else closest.missing,
             "skipped_quants": skipped or [],
+            # F7: missing_bytes depende de k_ovh quando a tentativa usou pesos por fallback.
+            **({} if closest is None else {"provenance": {
+                "missing_bytes": "estimated" if cq.get("file_bytes") is None else "calculated"}}),
         }
 
     # Embeddings (DECISIONS.md): ctx acima do máximo não rejeita; o texto é
@@ -446,18 +459,30 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
         weights, fallback = E.weights_bytes(params_total, bpw, q.get("file_bytes"))
         # MoE: memória usa params_total; leitura por token usa a fração ativa (A20).
         layer_read = E.bytes_per_token(weights, params_active, params_total) // n_layers
-        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools)
+        # Fa: acima de max_bpw_offload o híbrido não é avaliado (a banda da CPU
+        # derrubaria a velocidade; vale mais uma quant menor inteira na GPU).
+        hybrid_blocked = (max_bpw_offload is not None and bpw > max_bpw_offload
+                          and q["format"] == "GGUF" and "gpu" in pools and "cpu" in pools)
+        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools,
+                             allow_hybrid=not hybrid_blocked)
         viable = [a for a in attempts if a.tier != "inviavel"]
         if viable:
-            cand = _candidate(ref, m, q, _choose(viable), weights, kv, buf, fallback, skipped,
+            chosen = _choose(viable)
+            cand = _candidate(ref, m, q, chosen, weights, kv, buf, fallback, skipped,
                               intent, tuning_default, n_threads)
             if embed_only:
                 cand["ctx_effective"] = ctx
+            cand["_rank"] = (chosen.bytes_cpu_per_token, chosen.bytes_per_token)
             return cand, None
         for a in attempts:  # empate: fica a primeira (maior bpw, ordem de PLACEMENTS)
             if closest is None or a.missing < closest[0].missing:
                 closest = (a, q)
-        reason = "format_requires_full_gpu" if q["format"] in FULL_GPU_FORMATS else "does_not_fit"
+        if q["format"] in FULL_GPU_FORMATS:
+            reason = "format_requires_full_gpu"
+        elif hybrid_blocked:
+            reason = "bpw_above_offload_limit"  # o híbrido poderia caber, mas não é avaliado
+        else:
+            reason = "does_not_fit"
         skipped.append({**sq, "reason_code": reason})
 
     if closest is not None:
@@ -494,6 +519,7 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
         reasons.add("eta_default")
     if a.tps is None:
         reasons.add("bandwidth_unknown")
+        reasons.add("ranked_by_bytes")
     # Banda só conta se o pool tem camadas neste placement.
     bw_pools = [p for p in a.pools_used
                 if (p.id == "cpu" and a.n_gpu < m["n_layers"]) or (p.id != "cpu" and a.n_gpu > 0)]
@@ -587,9 +613,12 @@ def _assign_primary(candidates: list[dict], tasks: tuple[str, ...]) -> list[dict
 
 
 def _sort_key(c: dict) -> tuple:
+    """(tier, tokens/s desc com null por último, bytes da RAM por token, bytes por
+    token, model_id). Os bytes só desempatam de fato entre tokens/s null (F4)."""
     tps = c["tokens_per_s_est"]
-    return (E.TIERS.index(c["tier"]), tps is None, -(tps or 0.0), c["model"]["id"],
-            c["quant"]["format"], c["quant"]["name"])
+    bytes_cpu, bytes_total = c["_rank"]
+    return (E.TIERS.index(c["tier"]), tps is None, -(tps or 0.0), bytes_cpu, bytes_total,
+            c["model"]["id"], c["quant"]["format"], c["quant"]["name"])
 
 
 def _catalog_sha256(catalog: dict) -> str:
@@ -628,7 +657,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
         if not any(t in tasks for t in (m.get("tasks") or [])):
             n_mismatch += 1
             continue
-        cand, rej = _evaluate_model(m, intent, pools, tuning_default, n_threads)
+        cand, rej = _evaluate_model(m, intent, pools, tuning_default, n_threads,
+                                    tuning.get("max_bpw_offload"))
         if cand is not None:
             candidates.append(cand)
         else:
@@ -636,6 +666,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
 
     candidates.sort(key=_sort_key)
     warnings += _assign_primary(candidates, tasks)
+    for c in candidates:
+        del c["_rank"]  # critério interno de ordem, não vai para a saída
 
     verified = sorted(m["verified_at"] for m in models if m.get("verified_at"))
     out: dict[str, Any] = {
@@ -660,6 +692,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict) -> dict:
                 "eta_gpu": tuning["eta_gpu"],
                 "eta_cpu": tuning["eta_cpu"],
                 "source": tuning.get("source", "default"),
+                **({"max_bpw_offload": tuning["max_bpw_offload"]}
+                   if tuning.get("max_bpw_offload") is not None else {}),
             },
         },
         "pools": [p.to_json() for p in pool_list],

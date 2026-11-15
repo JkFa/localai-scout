@@ -41,7 +41,8 @@
           "properties": {
             "eta_gpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
             "eta_cpu": {"type": "number", "minimum": 0.3, "maximum": 1.0},
-            "source": {"enum": ["default", "calibrated"], "description": "calibrated = ajustado por `scout bench --run` nesta máquina."}
+            "source": {"enum": ["default", "calibrated"], "description": "calibrated = ajustado por `scout bench --run` nesta máquina."},
+            "max_bpw_offload": {"type": "number", "exclusiveMinimum": 0, "description": "Acima deste bpw o placement hybrid não é avaliado (m7_fixes.md Fa)."}
           }
         }
       }
@@ -161,7 +162,7 @@
       "properties": {
         "format": {"enum": ["GGUF", "EXL2", "AWQ", "GPTQ"]},
         "name": {"type": "string"},
-        "reason_code": {"enum": ["below_quality_floor", "bpw_unknown", "does_not_fit", "format_requires_full_gpu", "no_gpu_for_format"]}
+        "reason_code": {"enum": ["below_quality_floor", "bpw_unknown", "does_not_fit", "format_requires_full_gpu", "no_gpu_for_format", "bpw_above_offload_limit"]}
       }
     },
     "candidate": {
@@ -184,7 +185,7 @@
         "ctx_effective": {"type": "integer", "minimum": 1, "description": "Só em modelos avaliados apenas para embeddings: min(intent.ctx, ctx_max), o contexto usado no KV e no buffer (DECISIONS.md)."},
         "ttft_s_est": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "null enquanto a fórmula de prefill não for especificada (DECISIONS.md)."},
         "confidence": {"$ref": "#/$defs/confidence"},
-        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified"]}},
+        "confidence_reasons": {"type": "array", "uniqueItems": true, "items": {"enum": ["weights_fallback", "bpw_from_table", "bandwidth_estimated", "bandwidth_unknown", "hardware_low_confidence", "eta_default", "ttft_unspecified", "ranked_by_bytes"]}},
         "blocked": {"type": "boolean"},
         "blocked_reason": {"enum": ["non_commercial", "license_unknown", null]},
         "primary_for": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/task"}, "description": "Tarefas para as quais este é a recomendação principal, decidido pelo solver. Candidato blocked tem sempre []."},
@@ -214,7 +215,8 @@
           ]
         },
         "missing_bytes": {"type": ["integer", "null"], "minimum": 1, "description": "Bytes que faltam para a tentativa 'closest' chegar ao tier limite: max sobre os pools de (total_bytes - floor(0.95*budget_bytes)). null se não houve cálculo."},
-        "skipped_quants": {"type": "array", "items": {"$ref": "#/$defs/skipped_quant"}}
+        "skipped_quants": {"type": "array", "items": {"$ref": "#/$defs/skipped_quant"}},
+        "provenance": {"$ref": "#/$defs/provenance", "description": "Opcional (F7). missing_bytes: estimated se a tentativa mais próxima usou pesos por fallback, senão calculated. Ausente => calculated."}
       },
       "allOf": [
         {"if": {"properties": {"reason_code": {"enum": ["does_not_fit", "format_requires_full_gpu"]}}}, "then": {"properties": {"missing_bytes": {"type": "integer"}, "closest": {"type": "object"}}}}

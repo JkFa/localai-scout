@@ -490,3 +490,54 @@ sai != 0 se o id não existir. Usado para remover
   /health → /system → /plan; 401 limpa o token em memória. A porta do fragment tem precedência sobre o campo.
 - Um 403 de origem não permitida chega ao navegador sem CORS e é indistinguível de "servidor fora do ar"; a mensagem de erro
   lista as três causas (servidor parado, PNA/Safari, origem fora da allowlist).
+
+## 2026-11-15 — desempate por bytes da RAM quando tokens/s é null (F4)
+
+**Contexto.** Na Fase 1, `_choose` caía para a ordem fixa gpu_full > hybrid >
+cpu_only quando algum tokens/s era null. Era um desvio do PROMPT.md ("escolher
+o de maior tokens_per_s") que só foi relatado no resumo do agente, nunca
+registrado aqui. Na ordenação, candidatos com tokens/s null eram desempatados
+por `model_id`, critério sem relação com velocidade (achados 4 e 5 da
+revisão).
+
+**Decisão (humano, `schemas/m7_fixes.md` F4).** Substitui aquele desvio:
+- `_choose`: com algum tokens/s null, vence o placement de menor
+  `bytes_cpu_por_token = bytes_camada_lidos × (n_layers − n_gpu)` (MoE com a
+  fração ativa, A20); empate pelo menor `bytes_por_token` total; depois
+  gpu_full, hybrid, cpu_only.
+- Ordem dos candidatos e `primary_for`: (tier, tokens/s desc com null por
+  último, bytes_cpu_por_token asc, bytes_por_token asc, model_id asc).
+- Os bytes são só critério de ordem, nunca exibidos. Candidato com tokens/s
+  null recebe `ranked_by_bytes` em `confidence_reasons` (novo no enum).
+
+## 2026-11-15 — limiar de bpw para offload (Fa)
+
+**Decisão (humano, m7_fixes.md Fa).** `data/tuning.json` ganha
+`max_bpw_offload` (inicial 8.5), lido pela CLI e passado em `tuning`. Quant
+GGUF com bpw > limiar não tem o placement hybrid avaliado (só quando haveria
+GPU dedicada e CPU); gpu_full e cpu_only continuam. Se a quant não couber em
+nenhum dos dois, sai em `skipped_quants` com `bpw_above_offload_limit` (novo
+no enum) em vez de `does_not_fit`. Se ela couber em gpu_full ou cpu_only, vira
+candidata normalmente e nada é registrado. Sem a chave em `tuning`, não há
+limite. O solver ecoa o valor em `inputs.tuning.max_bpw_offload` (opcional no
+schema). PROMPT.md M1 atualizado no mesmo commit.
+
+## 2026-11-15 — marcas de estimativa no markdown (F6)
+
+**Decisão (humano).** No markdown de `scout plan`, número com proveniência
+`estimated` leva prefixo `~` (tokens/s sempre); memória e tokens/s de
+candidato com confiança low levam `⚠`. Legenda no topo, sem números. O JSON
+não muda.
+
+## 2026-11-15 — proveniência nos rejeitados (F7)
+
+**Decisão (humano).** `rejected[].provenance` opcional no schema. O solver o
+emite quando há `closest`: `missing_bytes` = `estimated` se a tentativa mais
+próxima usou pesos por fallback (sem `file_bytes`), senão `calculated`.
+Ausente (rejeição antes do cálculo) = `calculated` para o frontend.
+
+## 2026-11-15 — flag --tuning em plan e serve
+
+**Decisão (humano, m7_fixes.md F8).** `scout plan` e `scout serve` aceitam
+`--tuning F` (padrão `data/tuning.json`), para que os testes usem
+`tests/fixtures/tuning_test.json` e nunca leiam `data/`.

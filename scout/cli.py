@@ -54,7 +54,17 @@ def _parse_tasks(arg: str | None, catalog: dict) -> tuple[str, ...]:
 
 
 def _fmt_tps(x: float | None) -> str:
-    return "?" if x is None else f"{x:.2f}"
+    return "?" if x is None else f"~{x:.2f}"  # tokens/s é sempre estimado
+
+
+def _est(text: str, prov: dict, field: str) -> str:
+    """Prefixo ~ quando a proveniência do número é estimated (m7_fixes.md F6)."""
+    return ("~" if prov.get(field) == "estimated" else "") + text
+
+
+def _warn(text: str, c: dict) -> str:
+    """⚠ ao lado do número quando o candidato tem confiança low."""
+    return text + (" ⚠" if c["confidence"] == "low" else "")
 
 
 def render_markdown(f: dict) -> str:
@@ -63,6 +73,9 @@ def render_markdown(f: dict) -> str:
     if "fixture" in f:
         lines += ["> DADOS SINTÉTICOS: " + f["fixture"]["description"], ""]
     lines += [
+        "Legenda: `~` = estimado (constante empírica ou dado de baixa confiança); "
+        "`⚠` = candidato com confiança baixa.",
+        "",
         f"Tarefas: {', '.join(intent['tasks'])} · contexto: {intent['ctx']} tokens · "
         f"KV: {intent['kv_quant']} · batch: {intent['batch']} · "
         f"uso comercial: {'sim' if intent['commercial_use'] else 'não'}",
@@ -73,9 +86,12 @@ def render_markdown(f: dict) -> str:
         "| --- | --- | --- | --- | --- |",
     ]
     for p in f["pools"]:
-        bw = "desconhecida" if p["bandwidth_bytes_per_s"] is None else fmt_gbps(p["bandwidth_bytes_per_s"])
-        lines.append(f"| {p['id']} | {fmt_gb(p['total_bytes'])} | {fmt_gb(p['reserved_bytes'])} | "
-                     f"{fmt_gb(p['usable_bytes'])} | {bw} |")
+        pv = p["provenance"]
+        bw = ("desconhecida" if p["bandwidth_bytes_per_s"] is None
+              else _est(fmt_gbps(p["bandwidth_bytes_per_s"]), pv, "bandwidth_bytes_per_s"))
+        lines.append(f"| {p['id']} | {_est(fmt_gb(p['total_bytes']), pv, 'total_bytes')} "
+                     f"| {_est(fmt_gb(p['reserved_bytes']), pv, 'reserved_bytes')} "
+                     f"| {_est(fmt_gb(p['usable_bytes']), pv, 'usable_bytes')} | {bw} |")
 
     lines += ["", "## Candidatos", ""]
     if not f["candidates"]:
@@ -100,19 +116,24 @@ def render_markdown(f: dict) -> str:
             lines.append(
                 f"| [{c['model']['id']}]({c['model']['source_url']}) | {q['format']} {q['name']} "
                 f"| {c['placement']} | {c['n_gpu_layers']}/{c['model']['n_layers']} "
-                f"| {fmt_gb(c['total_bytes'])} | {c['tier']} | {_fmt_tps(c['tokens_per_s_est'])} "
+                f"| {_warn(_est(fmt_gb(c['total_bytes']), c['provenance'], 'total_bytes'), c)} | {c['tier']} "
+                f"| {_warn(_fmt_tps(c['tokens_per_s_est']), c)} "
                 f"| {c['confidence']} | {'; '.join(notes)} |")
         lines += ["", "Memória por pool:", ""]
+        pool_prov = {p["id"]: p["provenance"] for p in f["pools"]}
         for c in f["candidates"]:
-            parts = [f"{u['pool']} {fmt_gb(u['total_bytes'])} de {fmt_gb(u['budget_bytes'])} ({u['tier']})"
+            cp = c["provenance"]
+            parts = [f"{u['pool']} {_est(fmt_gb(u['total_bytes']), cp, 'total_bytes')} de "
+                     f"{_est(fmt_gb(u['budget_bytes']), pool_prov.get(u['pool'], {}), 'usable_bytes')} ({u['tier']})"
                      for u in c["by_pool"]]
-            lines.append(f"- {c['model']['id']}: pesos {fmt_gb(c['weights_bytes'])}, "
+            lines.append(f"- {c['model']['id']}: pesos {_est(fmt_gb(c['weights_bytes']), cp, 'weights_bytes')}, "
                          f"KV {fmt_gb(c['kv_bytes'])}, buffer {fmt_gb(c['buffer_bytes'])}; " + "; ".join(parts))
 
     if f["rejected"]:
         lines += ["", "## Rejeitados", ""]
         for r in f["rejected"]:
-            extra = "" if r["missing_bytes"] is None else f" Faltam {fmt_gb(r['missing_bytes'])}."
+            extra = ("" if r["missing_bytes"] is None
+                     else f" Faltam {_est(fmt_gb(r['missing_bytes']), r.get('provenance', {}), 'missing_bytes')}.")
             lines.append(f"- {r['model']['id']} — `{r['reason_code']}`: {r['message']}{extra}")
 
     ex = f["excluded"]
@@ -123,10 +144,11 @@ def render_markdown(f: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def load_tuning() -> dict:
-    tuning, _ = _read_json(TUNING_PATH, None)
+def load_tuning(path: Path | None = None) -> dict:
+    path = TUNING_PATH if path is None else path
+    tuning, _ = _read_json(path, None)
     if not isinstance(tuning, dict) or "eta_gpu" not in tuning or "eta_cpu" not in tuning:
-        raise InputError(f"{TUNING_PATH}: faltam eta_gpu/eta_cpu")
+        raise InputError(f"{path}: faltam eta_gpu/eta_cpu")
     return tuning
 
 
@@ -140,7 +162,7 @@ def run_plan(system: dict, catalog: dict, catalog_raw: bytes, tuning: dict, inte
 def _cmd_plan(args: argparse.Namespace) -> int:
     system, _ = _read_json(Path(args.system), "system")
     catalog, catalog_raw = _read_json(Path(args.catalog), "catalog")
-    tuning = load_tuning()
+    tuning = load_tuning(Path(args.tuning))
     if args.ctx < 1:
         raise InputError("--ctx precisa ser >= 1")
     intent = Intent(tasks=_parse_tasks(args.task, catalog), ctx=args.ctx, commercial_use=args.commercial)
@@ -159,7 +181,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     from scout import server
 
     try:
-        return server.serve(args.port, Path(args.catalog))
+        return server.serve(args.port, Path(args.catalog), Path(args.tuning))
     except OSError as e:
         raise InputError(f"não foi possível abrir 127.0.0.1:{args.port}: {e.strerror or e}") from e
 
@@ -298,6 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--commercial", action="store_true", help="uso comercial: bloqueia licenças não comerciais")
     plan.add_argument("--offline", action="store_true", help="sem efeito: plan nunca usa a rede")
     plan.add_argument("--json", action="store_true", help="imprime feasibility.json")
+    plan.add_argument("--tuning", default=str(TUNING_PATH), help="constantes empíricas (eta, max_bpw_offload)")
     plan.set_defaults(func=_cmd_plan)
     col = sub.add_parser("collect", help="lê o hardware desta máquina e grava system.json")
     col.add_argument("--out", default="system.json", help="arquivo de saída ('-' imprime no stdout)")
@@ -307,6 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
     srv = sub.add_parser("serve", help="backend local para o frontend (só 127.0.0.1, com token)")
     srv.add_argument("--port", type=int, default=8765, help="porta em 127.0.0.1 (padrão 8765; falha se ocupada)")
     srv.add_argument("--catalog", default=str(CATALOG_DEFAULT), help="catálogo de modelos")
+    srv.add_argument("--tuning", default=str(TUNING_PATH), help="constantes empíricas (eta, max_bpw_offload)")
     srv.set_defaults(func=_cmd_serve)
     cat = sub.add_parser("catalog", help="mantém o catálogo a partir da API do Hugging Face")
     csub = cat.add_subparsers(dest="catalog_command", required=True)
