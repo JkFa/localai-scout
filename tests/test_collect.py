@@ -215,3 +215,37 @@ def test_cli_collect_writes_valid_file(tmp_path, monkeypatch):
     out = tmp_path / "system.json"
     assert main(["collect", "--out", str(out)]) == 0
     assert_valid("system.schema.json", json.loads(out.read_text(encoding="utf-8")))
+
+
+def test_collect_dmidecode_file(monkeypatch, tmp_path):
+    _no_tools(monkeypatch)
+    f = tmp_path / "mem.txt"
+    f.write_text(txt("dmidecode_ddr5.txt"), encoding="utf-8")
+    doc = C.collect(str(f))
+    assert_valid("system.schema.json", doc)
+    m = doc["memory"]
+    assert m["type"]["value"] == "DDR5" and m["type"]["source"] == "dmidecode_file"
+    assert m["bandwidth_bytes_per_s"]["value"] == 4400 * 2 * 8 * 10**6
+
+
+def test_collect_dmidecode_file_denied_or_missing(monkeypatch, tmp_path):
+    _no_tools(monkeypatch)
+    f = tmp_path / "mem.txt"
+    f.write_text(txt("dmidecode_denied.txt"), encoding="utf-8")
+    for path in (str(f), str(tmp_path / "nao_existe.txt")):
+        doc = C.collect(path)
+        assert_valid("system.schema.json", doc)
+        assert doc["memory"]["type"]["value"] is None
+
+
+def test_denied_dmidecode_gives_hint(monkeypatch, capsys, tmp_path):
+    def denied(*a, **k):
+        raise subprocess.CalledProcessError(1, "dmidecode", output="", stderr="Permission denied")
+    monkeypatch.setattr(subprocess, "run", denied)
+    monkeypatch.setattr(C.shutil, "which", lambda b: None)
+    doc = C.collect()
+    p = next(p for p in doc["probes"] if p["probe"] == "dmidecode")
+    assert p["status"] == "permission_denied" and "sudo scout collect" in p["message"] and "--dmidecode" in p["message"]
+    from scout.cli import main
+    main(["collect", "--out", str(tmp_path / "s.json")])
+    assert "--dmidecode mem.txt" in capsys.readouterr().err

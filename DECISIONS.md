@@ -387,3 +387,10 @@ Híbrido Intel: P/E via `/sys/devices/cpu_core|cpu_atom/cpus` + `lscpu -p=CPU,CO
 `cores_performance` é a base de n_threads. Canais pelo dmidecode: locator de canal, ou nº de
 módulos populados (low). Flash attention derivado de cc >= 8.0 (medium). `vram_free` é
 medido na coleta (schema exige) e oscila entre execuções.
+
+## 2026-11-15 — dmidecode por escolha do usuário
+
+**Decisão.** O scout nunca invoca sudo. Tipo/MT/s/canais da RAM exigem root; o usuário escolhe:
+`sudo scout collect` (processo já root) ou `sudo dmidecode -t memory > mem.txt` seguido de
+`scout collect --dmidecode mem.txt`. O arquivo passa pelo mesmo parser; `source` = `dmidecode_file`.
+Quando negado, a dica com os dois caminhos vai no probe `dmidecode` do system.json e no stderr.

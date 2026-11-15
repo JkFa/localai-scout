@@ -206,7 +206,11 @@ def collect_cpu_linux(probes: Probes) -> dict:
     return cpu
 
 
-def collect_memory_linux(probes: Probes) -> dict:
+DMI_HINT = ("dmidecode exige root: rode `sudo scout collect` ou gere `sudo dmidecode -t memory > mem.txt` "
+            "e use `scout collect --dmidecode mem.txt`")
+
+
+def collect_memory_linux(probes: Probes, dmidecode_file: str | None = None) -> dict:
     mem = {"ram_total_bytes": missing("/proc/meminfo indisponível"), "swap_total_bytes": missing("/proc/meminfo indisponível")}
     text = read_text("/proc/meminfo", probes, "meminfo")
     kv = P.parse_meminfo(text) if text else {}
@@ -220,28 +224,38 @@ def collect_memory_linux(probes: Probes) -> dict:
     if "SwapTotal" in kv:
         mem["swap_total_bytes"] = field(kv["SwapTotal"], "/proc/meminfo:SwapTotal")
     dmi = None
-    out = run_cmd(["dmidecode", "-t", "memory"], probes, timeout=5.0)
-    if out is not None:
+    dmi_src = "dmidecode"
+    if dmidecode_file:  # saída gerada pelo próprio usuário; nunca invocamos sudo
+        dmi_src = "dmidecode_file"
+        out = read_text(dmidecode_file, probes, "dmidecode_file", limit=2_000_000)
         idx = len(probes.items) - 1
+    else:
+        out = run_cmd(["dmidecode", "-t", "memory"], probes, timeout=5.0)
+        idx = len(probes.items) - 1
+    if out is not None:
         dmi = P.parse_dmidecode(out)
         if not dmi.get("populated"):
             low = out.lower()
-            probes.set(idx, "permission_denied" if "permission denied" in low else "error",
-                       "dmidecode sem dados de memória (exige root)")
+            denied = "permission denied" in low
+            probes.set(idx, "permission_denied" if denied else "error",
+                       DMI_HINT if denied and not dmidecode_file else "dmidecode sem dados de memória")
             dmi = None
-    return _memory_rest(mem, dmi, unified=False, platform_note="derived:platform")
+    elif not dmidecode_file and probes.items[idx]["status"] == "permission_denied":
+        probes.set(idx, "permission_denied", DMI_HINT)
+    return _memory_rest(mem, dmi, unified=False, platform_note="derived:platform", dmi_src=dmi_src)
 
 
-def _memory_rest(mem: dict, dmi: dict | None, unified: bool | None, platform_note: str) -> dict:
+def _memory_rest(mem: dict, dmi: dict | None, unified: bool | None, platform_note: str,
+                 dmi_src: str = "dmidecode") -> dict:
     why = "dmidecode indisponível (exige root)"
     t = dmi.get("type") if dmi else None
     mts = dmi.get("speed_mts") if dmi else None
     ch = dmi.get("channels") if dmi else None
-    mem["type"] = field(t, "dmidecode", "medium") if t else missing(why)
-    mem["speed_mts"] = field(mts, "dmidecode", "medium") if mts else missing(why)
+    mem["type"] = field(t, dmi_src, "medium") if t else missing(why)
+    mem["speed_mts"] = field(mts, dmi_src, "medium") if mts else missing(why)
     if ch:
         exact = dmi.get("channels_exact")
-        mem["channels"] = field(ch, "dmidecode", "medium" if exact else "low",
+        mem["channels"] = field(ch, dmi_src, "medium" if exact else "low",
                                 None if exact else "estimado pelo nº de módulos populados")
     else:
         mem["channels"] = missing(why)
@@ -525,7 +539,7 @@ def collect_windows(probes: Probes) -> tuple[dict, dict]:
 # ---------------------------------------------------------------- orquestração
 
 
-def collect() -> dict:
+def collect(dmidecode_file: str | None = None) -> dict:
     probes = Probes()
     system = {"Linux": "linux", "Darwin": "darwin", "Windows": "windows"}.get(platform.system(), "other")
     why = "seção falhou"
@@ -534,7 +548,7 @@ def collect() -> dict:
     cpu = mem = None
     if system == "linux":
         cpu = _guard(probes, "cpu", lambda: collect_cpu_linux(probes))
-        mem = _guard(probes, "memory", lambda: collect_memory_linux(probes))
+        mem = _guard(probes, "memory", lambda: collect_memory_linux(probes, dmidecode_file))
     elif system == "darwin":
         r = _guard(probes, "cpu+memory", lambda: collect_darwin(probes))
         cpu, mem = r if r else (None, None)

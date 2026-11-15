@@ -146,7 +146,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
 def _cmd_collect(args: argparse.Namespace) -> int:
     from scout.collect import collect
 
-    text = json.dumps(collect(), indent=2, ensure_ascii=False) + "\n"
+    doc = collect(args.dmidecode)
+    for p in doc["probes"]:
+        if p["probe"] == "dmidecode" and p["status"] == "permission_denied":
+            sys.stderr.write(f"scout: dica: {p['message']}\n")
+    text = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
     if args.out == "-":
         sys.stdout.write(text)
         return 0
@@ -173,6 +177,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.set_defaults(func=_cmd_plan)
     col = sub.add_parser("collect", help="lê o hardware desta máquina e grava system.json")
     col.add_argument("--out", default="system.json", help="arquivo de saída ('-' imprime no stdout)")
+    col.add_argument("--dmidecode", default=None, metavar="ARQUIVO",
+                     help="saída de `sudo dmidecode -t memory` gerada por você (tipo, MT/s e canais da RAM)")
     col.set_defaults(func=_cmd_collect)
     return parser
 
