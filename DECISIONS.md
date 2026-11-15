@@ -608,8 +608,9 @@ interpretação.
 
 - **Banda de RAM.** `MT/s * canais * data_width_bits / 8`. Usa "Data Width" do dmidecode (nunca "Total Width", que inclui
   ECC). Largura ausente, fora de {32, 64} ou diferente entre módulos: assume 64 e a confiança cai a low. Canais por contagem
-  de módulos continuam low. Tipo não entra na fórmula; divergência (DDR3/DDR4 acima do máximo JEDEC de MT/s, ou largura de
-  32 bits) vai em `source`/`note` do campo `type`, valor mantido. Caso real: 2 canais de 32 bits a 5500 MT/s = 44 GB/s
+  de módulos continuam low. Tipo não entra na fórmula; divergência vai em `source`/`note` do campo `type`, valor mantido, e só existe para
+  canal de 32 bits (Data Width 32) com tipo DDR3/DDR4 (observação dos dados coletados, sem números). Sem limites de MT/s por
+  tipo: seria constante de memória sem fonte e daria falso positivo em DDR4 com XMP. Caso real: 2 canais de 32 bits a 5500 MT/s = 44 GB/s
   (a máquina do humano reporta "DDR4", padrão de LPDDR5). PROMPT.md M2 atualizado. `mem.txt` da raiz não vai a tests/ (tem seriais).
 - **Energia.** Causa do defeito: `parse_power` nunca lia `online` dos supplies Mains/USB; concluía "na tomada" do status da
   bateria ("Full", "Not charging", "Charging"), que firmware/limite de carga reportam mesmo na bateria. Agora: qualquer

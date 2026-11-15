@@ -500,6 +500,9 @@ def test_r_type_divergence_noted_value_kept(monkeypatch, tmp_path):
     doc = C.collect(str(f))
     assert_valid("system.schema.json", doc)
     m = doc["memory"]
-    assert m["type"]["value"] == "DDR4" and "divergente" in m["type"]["source"] and "5500" in m["type"]["note"]
+    assert m["type"]["value"] == "DDR4" and "divergente" in m["type"]["source"] and "32 bits" in m["type"]["note"]
+    assert not any(ch.isdigit() for ch in m["type"]["note"].replace("32 bits", "").replace("DDR4/DDR3", ""))
     assert m["bandwidth_bytes_per_s"]["value"] == 44_000_000_000
     assert P.type_divergence("DDR4", 3200, 64) is None and P.type_divergence("DDR5", 5500, 32) is None
+    assert P.type_divergence("DDR4", 3600, 64) is None and P.type_divergence("DDR4", 5500, 64) is None  # sem limite de MT/s
+    assert P.type_divergence("DDR3", 1600, 32) is not None

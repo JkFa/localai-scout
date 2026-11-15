@@ -379,18 +379,11 @@ def ram_bandwidth(mts: int | None, channels: int | None, mem_type: str | None,
     return None, f"none: {why}", "low", None
 
 
-_STD_MAX_MTS = {"DDR3": 2133, "DDR4": 3200}
-
-
 def type_divergence(mem_type: str | None, mts: int | None, data_width_bits: int | None) -> str | None:
-    """Tipo reportado incompatível com MT/s/largura (ex.: DDR4 a 5500 MT/s em canal de 32 bits = padrão LPDDR5)."""
-    t = (mem_type or "").upper()
-    if t not in _STD_MAX_MTS:
-        return None
-    if mts and mts > _STD_MAX_MTS[t]:
-        return f"{t} reportado, mas {mts} MT/s excede o padrão {t} ({_STD_MAX_MTS[t]})"
-    if data_width_bits == 32:
-        return f"{t} reportado, mas Data Width de 32 bits não é típico de {t} (DIMM de 64 bits)"
+    """Observação só sobre dados coletados: canal de 32 bits com tipo DDR3/DDR4. Sem limites de MT/s por tipo."""
+    if (mem_type or "").upper() in ("DDR3", "DDR4") and data_width_bits == 32:
+        return ("canal de 32 bits é característico de LPDDR, não de DDR4/DDR3; o tipo informado pelo dmidecode é "
+                "pouco confiável em memória soldada; MT/s e largura foram usados direto")
     return None
 
 
