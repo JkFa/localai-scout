@@ -373,3 +373,17 @@ preterido; o markdown marca o preterido na coluna de nota.
 **Decisão (humano, adendo item 4).** O solver não emite `catalog_stale`: ele
 não lê relógio (determinismo). A checagem de `verified_at` > 60 dias fica
 para `scout catalog check` (Fase 3). O código continua no enum do schema.
+
+## 2026-11-15 — Fase 2: coleta (scout collect)
+
+**Decisão.** Parsers puros em `scout/parsers.py`; execução, timeouts e montagem do
+`system.json` em `scout/collect.py`. dmidecode nunca com sudo: sem root, tipo/MT/s/canais
+ficam `null`/low. Banda de RAM: MT/s*canais*8 (medium) quando ambos detectados; senão
+`data/bandwidth_tables.json` (DDR3..LPDDR5X, 2 canais de 64 bits, velocidade típica da
+geração) com `confidence: low` e `source` começando em `estimate:table`. É dado de
+REFERÊNCIA, não detectado; sem tipo de memória, fica `null`. Banda de GPU: sem tabela por
+nome (Q5); nenhuma sonda local atual dá clock x largura do barramento, então fica `null`.
+Híbrido Intel: P/E via `/sys/devices/cpu_core|cpu_atom/cpus` + `lscpu -p=CPU,CORE`;
+`cores_performance` é a base de n_threads. Canais pelo dmidecode: locator de canal, ou nº de
+módulos populados (low). Flash attention derivado de cc >= 8.0 (medium). `vram_free` é
+medido na coleta (schema exige) e oscila entre execuções.

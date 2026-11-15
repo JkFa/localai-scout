@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "description": "Banda de RAM de REFERENCIA por geracao, usada so quando MT/s nao foi detectado. Nao e medicao: velocidade tipica da geracao em 2 canais de 64 bits. Sempre confidence low.",
+  "ram": {
+    "DDR3": {"reference_mts": 1600, "channels": 2, "bytes_per_s": 25600000000, "source": "reference: DDR3-1600 dual-channel, MT/s*2*8", "confidence": "low", "note": "DDR3-1600 em 2 canais"},
+    "DDR4": {"reference_mts": 3200, "channels": 2, "bytes_per_s": 51200000000, "source": "reference: DDR4-3200 dual-channel, MT/s*2*8", "confidence": "low", "note": "DDR4-3200 em 2 canais"},
+    "DDR5": {"reference_mts": 4800, "channels": 2, "bytes_per_s": 76800000000, "source": "reference: DDR5-4800 dual-channel, MT/s*2*8", "confidence": "low", "note": "DDR5-4800 em 2 canais"},
+    "LPDDR4": {"reference_mts": 3200, "channels": 2, "bytes_per_s": 51200000000, "source": "reference: LPDDR4-3200 128-bit, MT/s*2*8", "confidence": "low", "note": "LPDDR4-3200 em 128 bits"},
+    "LPDDR4X": {"reference_mts": 4266, "channels": 2, "bytes_per_s": 68256000000, "source": "reference: LPDDR4X-4266 128-bit, MT/s*2*8", "confidence": "low", "note": "LPDDR4X-4266 em 128 bits"},
+    "LPDDR5": {"reference_mts": 6400, "channels": 2, "bytes_per_s": 102400000000, "source": "reference: LPDDR5-6400 128-bit, MT/s*2*8", "confidence": "low", "note": "LPDDR5-6400 em 128 bits"},
+    "LPDDR5X": {"reference_mts": 7500, "channels": 2, "bytes_per_s": 120000000000, "source": "reference: LPDDR5X-7500 128-bit, MT/s*2*8", "confidence": "low", "note": "LPDDR5X-7500 em 128 bits"}
+  }
+}

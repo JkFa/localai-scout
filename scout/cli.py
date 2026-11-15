@@ -143,6 +143,21 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_collect(args: argparse.Namespace) -> int:
+    from scout.collect import collect
+
+    text = json.dumps(collect(), indent=2, ensure_ascii=False) + "\n"
+    if args.out == "-":
+        sys.stdout.write(text)
+        return 0
+    try:
+        Path(args.out).write_text(text, encoding="utf-8")
+    except OSError as e:
+        raise InputError(f"não foi possível escrever {args.out}: {e.strerror or e}") from e
+    sys.stderr.write(f"scout: perfil de hardware gravado em {args.out}\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scout", description="Recomenda modelos de IA locais que cabem nesta máquina.")
     parser.add_argument("--version", action="version", version=f"scout {__version__}")
@@ -156,6 +171,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--offline", action="store_true", help="sem efeito: plan nunca usa a rede")
     plan.add_argument("--json", action="store_true", help="imprime feasibility.json")
     plan.set_defaults(func=_cmd_plan)
+    col = sub.add_parser("collect", help="lê o hardware desta máquina e grava system.json")
+    col.add_argument("--out", default="system.json", help="arquivo de saída ('-' imprime no stdout)")
+    col.set_defaults(func=_cmd_collect)
     return parser
 
 
