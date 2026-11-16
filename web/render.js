@@ -339,6 +339,16 @@ function candRow(c, task) {
     licenseCell(m, c));
 }
 
+// Suposição de posição do tokens/s (inputs.decode). Ausente em arquivos antigos: devolve null.
+export function decodeNote(doc) {
+  const d = doc.inputs && doc.inputs.decode;
+  if (!d || typeof d !== "object") return null;
+  const n = (v) => (Number.isFinite(v) ? v.toLocaleString("pt-BR") : "?");
+  const kv = doc.inputs.intent && doc.inputs.intent.kv_quant;
+  return h("p", { class: "muted", id: "decode-note" }, h("strong", {}, "Como ler os tokens/s: "),
+    `tokens/s no fim de uma janela de ${n(d.window_tokens)} tokens: resposta de ${n(d.answer_tokens)} tokens terminando no limite do contexto, ${kv ? `KV ${kv} ` : "KV "}lido até a posição média ${n(d.position_tokens)}. Conversas mais curtas geram mais rápido.`);
+}
+
 // opts: {task: "all"|<task>, commercial: bool}. Só filtra o que o JSON já diz.
 export function recommendationGroups(doc, opts) {
   const tasks = (doc.inputs.intent.tasks || []).filter((t) => opts.task === "all" || t === opts.task);
@@ -360,12 +370,14 @@ export function renderRecommendationBody(doc, opts) {
   const kids = [];
   const wb = warnBanner(doc);
   if (wb) kids.push(wb);
+  const dn = decodeNote(doc);
+  if (dn) kids.push(dn);
   if (!doc.candidates.length) kids.push(h("div", { class: "banner banner-warn", role: "note" }, "Nenhum modelo coube nesta máquina com estas configurações. Veja a seção Rejeitados."));
   if (hidden) kids.push(h("p", { class: "muted" }, `${hidden} linha(s) escondida(s) pelo filtro de uso comercial (licença não comercial, bloqueada ou desconhecida).`));
   for (const g of groups) {
     kids.push(h("h3", {}, taskLabel(g.task)));
     if (!g.list.length) { kids.push(h("p", { class: "muted" }, "Nenhuma recomendação para esta tarefa.")); continue; }
-    kids.push(h("div", { class: "scroll" }, table(`Recomendações para ${taskLabel(g.task)}`, ["Modelo", "Quantização", "Colocação", "Memória", "Velocidade", "Download", "Licença"], g.list.map((c) => candRow(c, g.task)))));
+    kids.push(h("div", { class: "scroll" }, table(`Recomendações para ${taskLabel(g.task)}`, ["Modelo", "Quantização", "Colocação", "Memória", doc.inputs.decode && Number.isFinite(doc.inputs.decode.window_tokens) ? `Velocidade (no fim da janela de ${doc.inputs.decode.window_tokens.toLocaleString("pt-BR")} tokens)` : "Velocidade", "Download", "Licença"], g.list.map((c) => candRow(c, g.task)))));
   }
   return kids;
 }

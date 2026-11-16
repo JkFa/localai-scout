@@ -8,6 +8,68 @@
     {
      "budget_bytes": 11800000000,
      "buffer_bytes": 481920000,
+     "kv_bytes": 469762048,
+     "pool": "gpu",
+     "tier": "confortavel",
+     "total_bytes": 1591128736,
+     "weights_bytes": 639446688
+    }
+   ],
+   "confidence": "medium",
+   "confidence_reasons": [
+    "eta_default",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 469762048,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-0.6B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-0.6B",
+    "n_layers": 28,
+    "params_active": 751632384,
+    "params_total": 751632384,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-0.6B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 28,
+   "n_threads": 6,
+   "placement": "gpu_full",
+   "primary_for": [
+    "chat"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "estimated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 6.806,
+    "file_bytes": 639446688,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "eta",
+   "tokens_per_s_est": 214.19,
+   "total_bytes": 1591128736,
+   "ttft_s_est": null,
+   "weights_bytes": 639446688
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 11800000000,
+     "buffer_bytes": 481920000,
      "kv_bytes": 603979776,
      "pool": "gpu",
      "tier": "confortavel",
@@ -37,9 +99,7 @@
    "n_gpu_layers": 36,
    "n_threads": 6,
    "placement": "gpu_full",
-   "primary_for": [
-    "chat"
-   ],
+   "primary_for": [],
    "provenance": {
     "buffer_bytes": "calculated",
     "kv_bytes": "calculated",
@@ -57,7 +117,7 @@
    "skipped_quants": [],
    "tier": "confortavel",
    "tokens_per_s_basis": "eta",
-   "tokens_per_s_est": 52.57,
+   "tokens_per_s_est": 46.79,
    "total_bytes": 5366304480,
    "ttft_s_est": null,
    "weights_bytes": 4280404704
@@ -132,7 +192,7 @@
    ],
    "tier": "confortavel",
    "tokens_per_s_basis": "eta",
-   "tokens_per_s_est": 27.78,
+   "tokens_per_s_est": 27.1,
    "total_bytes": 8815326208,
    "ttft_s_est": null,
    "weights_bytes": 8098525184
@@ -260,7 +320,7 @@
    "skipped_quants": [],
    "tier": "limite",
    "tokens_per_s_basis": "eta",
-   "tokens_per_s_est": 25.83,
+   "tokens_per_s_est": 24.36,
    "total_bytes": 9795417888,
    "ttft_s_est": null,
    "weights_bytes": 8709518112
@@ -341,7 +401,7 @@
    ],
    "tier": "limite",
    "tokens_per_s_basis": "eta",
-   "tokens_per_s_est": 21.31,
+   "tokens_per_s_est": 18.57,
    "total_bytes": 22610153984,
    "ttft_s_est": null,
    "weights_bytes": 21725580800
@@ -357,7 +417,7 @@
  },
  "inputs": {
   "calibration": {
-   "calibration_schema_version": 1,
+   "calibration_schema_version": 2,
    "match": [
     {
      "current": "linux",
@@ -527,7 +587,7 @@
    },
    "status": "discarded",
    "store": {
-    "calibration_schema_version": 1,
+    "calibration_schema_version": 2,
     "machine": {
      "cpu.cores_physical": 8,
      "cpu.model": "CPU Fictícia de Exemplo 8C",
@@ -542,9 +602,14 @@
    }
   },
   "catalog": {
-   "model_count": 7,
+   "model_count": 8,
    "oldest_verified_at": "2026-11-15",
-   "sha256": "bfb5520c685027961f7ef2df943f6e27ecac497fe4841e0fabe2ec7aa3047c8b"
+   "sha256": "541ea4e768d8e9a7cbf84972d6c2e900963b4c80fbf79cb39e3948abf09bb377"
+  },
+  "decode": {
+   "answer_tokens": 1024,
+   "position_tokens": 3584,
+   "window_tokens": 4096
   },
   "intent": {
    "batch": 1,

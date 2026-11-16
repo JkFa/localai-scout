@@ -8,6 +8,71 @@
     {
      "budget_bytes": 13000000000,
      "buffer_bytes": 481920000,
+     "kv_bytes": 469762048,
+     "pool": "cpu",
+     "tier": "confortavel",
+     "total_bytes": 1591128736,
+     "weights_bytes": 639446688
+    }
+   ],
+   "confidence": "low",
+   "confidence_reasons": [
+    "calibration_engine_changed",
+    "calibration_memory_unverified",
+    "calibration_other_arch",
+    "calibration_power_mismatch",
+    "ttft_unspecified"
+   ],
+   "kv_bytes": 469762048,
+   "model": {
+    "commercial_ok": true,
+    "id": "Qwen/Qwen3-0.6B",
+    "license": "apache-2.0",
+    "license_source": "https://huggingface.co/Qwen/Qwen3-0.6B",
+    "n_layers": 28,
+    "params_active": 751632384,
+    "params_total": 751632384,
+    "source_url": "https://huggingface.co/Qwen/Qwen3-0.6B",
+    "tasks": [
+     "chat"
+    ]
+   },
+   "n_gpu_layers": 0,
+   "n_threads": 6,
+   "placement": "cpu_only",
+   "primary_for": [
+    "chat"
+   ],
+   "provenance": {
+    "buffer_bytes": "calculated",
+    "kv_bytes": "calculated",
+    "n_gpu_layers": "calculated",
+    "tokens_per_s_est": "calculated",
+    "total_bytes": "calculated",
+    "weights_bytes": "catalog"
+   },
+   "quant": {
+    "bpw": 6.806,
+    "file_bytes": 639446688,
+    "format": "GGUF",
+    "name": "Q8_0"
+   },
+   "skipped_quants": [],
+   "tier": "confortavel",
+   "tokens_per_s_basis": "calibration",
+   "tokens_per_s_est": 9.52,
+   "total_bytes": 1591128736,
+   "ttft_s_est": null,
+   "weights_bytes": 639446688
+  },
+  {
+   "blocked": false,
+   "blocked_reason": null,
+   "buffer_bytes": 481920000,
+   "by_pool": [
+    {
+     "budget_bytes": 13000000000,
+     "buffer_bytes": 481920000,
      "kv_bytes": 603979776,
      "pool": "cpu",
      "tier": "confortavel",
@@ -40,9 +105,7 @@
    "n_gpu_layers": 0,
    "n_threads": 6,
    "placement": "cpu_only",
-   "primary_for": [
-    "chat"
-   ],
+   "primary_for": [],
    "provenance": {
     "buffer_bytes": "calculated",
     "kv_bytes": "calculated",
@@ -60,7 +123,7 @@
    "skipped_quants": [],
    "tier": "confortavel",
    "tokens_per_s_basis": "calibration",
-   "tokens_per_s_est": 2.34,
+   "tokens_per_s_est": 2.08,
    "total_bytes": 5366304480,
    "ttft_s_est": null,
    "weights_bytes": 4280404704
@@ -132,7 +195,7 @@
    ],
    "tier": "confortavel",
    "tokens_per_s_basis": "calibration",
-   "tokens_per_s_est": 1.23,
+   "tokens_per_s_est": 1.2,
    "total_bytes": 8815326208,
    "ttft_s_est": null,
    "weights_bytes": 8098525184
@@ -195,7 +258,7 @@
    "skipped_quants": [],
    "tier": "confortavel",
    "tokens_per_s_basis": "calibration",
-   "tokens_per_s_est": 1.15,
+   "tokens_per_s_est": 1.08,
    "total_bytes": 9795417888,
    "ttft_s_est": null,
    "weights_bytes": 8709518112
@@ -279,7 +342,7 @@
  },
  "inputs": {
   "calibration": {
-   "calibration_schema_version": 1,
+   "calibration_schema_version": 2,
    "match": [
     {
      "current": "linux",
@@ -451,7 +514,7 @@
    },
    "status": "used",
    "store": {
-    "calibration_schema_version": 1,
+    "calibration_schema_version": 2,
     "machine": {
      "cpu.cores_physical": 8,
      "cpu.model": "CPU Fictícia de Exemplo 8C",
@@ -466,9 +529,14 @@
    }
   },
   "catalog": {
-   "model_count": 7,
+   "model_count": 8,
    "oldest_verified_at": "2026-11-15",
-   "sha256": "bfb5520c685027961f7ef2df943f6e27ecac497fe4841e0fabe2ec7aa3047c8b"
+   "sha256": "541ea4e768d8e9a7cbf84972d6c2e900963b4c80fbf79cb39e3948abf09bb377"
+  },
+  "decode": {
+   "answer_tokens": 1024,
+   "position_tokens": 3584,
+   "window_tokens": 4096
   },
   "intent": {
    "batch": 1,
@@ -863,7 +931,7 @@
   },
   {
    "code": "slow_prefill_cpu",
-   "message": "Processar o prompt na CPU é lento (3 candidato(s) com a maioria das camadas na CPU: Qwen/Qwen3-4B, Qwen/Qwen2.5-Coder-7B-Instruct, Qwen/Qwen3-8B). Medição de referência: ~12 tokens/s de prefill em AMD Ryzen 5 7520U, 4 núcleos, CPU only, Qwen3-4B Q4_K_M, ctx 8192, prompt 532 tokens (ollama 0.17.6 API, 2026-11-15); nesse ritmo, um prompt de 700 tokens leva perto de um minuto. Outra máquina ou outro modelo mudam esse número; o tempo até o primeiro token não é estimado.",
+   "message": "Processar o prompt na CPU é lento (4 candidato(s) com a maioria das camadas na CPU: Qwen/Qwen3-0.6B, Qwen/Qwen3-4B, Qwen/Qwen2.5-Coder-7B-Instruct, Qwen/Qwen3-8B). Medido nesta máquina por scout bench: ~10 tokens/s de prefill na CPU (exemplo/modelo-ficticio-4b; ollama, 2000-01-01); nesse ritmo, um prompt de 600 tokens leva perto de um minuto. Outro modelo muda esse número.",
    "severity": "warn"
   }
  ]
