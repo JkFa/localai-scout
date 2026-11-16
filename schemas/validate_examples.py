@@ -47,10 +47,24 @@ def set_path(doc: dict, path: list, value) -> dict:
 
 sysx, catx, feax = load("system_rtx3060.json"), load("catalog_example.json"), load("feasibility_example.json")
 calx = load("calibration_example.json")
+
+
+def without_start(doc: dict) -> dict:
+    """Forma de um feasibility.json de scout <= 0.2.0 (decode_range_spec.md §3)."""
+    doc = copy.deepcopy(doc)
+    doc["inputs"]["decode"].pop("start_position_tokens")
+    for c in doc["candidates"]:
+        c.pop("tokens_per_s_est_start")
+        c["provenance"].pop("tokens_per_s_est_start")
+    return doc
+
+
+feax_v020 = without_start(feax)
 POSITIVE = [("system.schema.json", "system_rtx3060.json", sysx),
             ("catalog.schema.json", "catalog_example.json", catx),
             ("feasibility.schema.json", "feasibility_example.json", feax),
             ("error.schema.json", "erro inline", {"error": {"code": "unauthorized", "message": "token ausente"}}),
+            ("feasibility.schema.json", "arquivo de scout 0.2.0, sem tokens/s do início", feax_v020),
             ("calibration.schema.json", "calibration_example.json", calx),
             ("calibration.schema.json", "desktop: energia não aplicável, kernel null",
              set_path(set_path(calx, ["pools", "cpu", 0, "power"], {"on_ac": None, "profile": None, "not_applicable": ["on_ac", "profile"]}),
@@ -74,6 +88,15 @@ NEGATIVE = [
     ("feasibility.schema.json", "eco com caminho do arquivo", set_path(feax, ["inputs", "calibration", "path"], "/home/x")),
     ("feasibility.schema.json", "tuning.calibration antigo",
      set_path(feax, ["inputs", "tuning", "calibration"], {"cpu": calx["pools"]["cpu"][0]})),
+    ("feasibility.schema.json", "start_position_tokens sem o campo num candidato",
+     set_path(feax, ["candidates", 1], {k: v for k, v in feax["candidates"][1].items() if k != "tokens_per_s_est_start"})),
+    ("feasibility.schema.json", "tokens_per_s_est_start sem start_position_tokens",
+     set_path(feax_v020, ["candidates", 0, "tokens_per_s_est_start"], 29.16)),
+    ("feasibility.schema.json", "tokens_per_s_est null e início numérico",
+     set_path(feax, ["candidates", 0, "tokens_per_s_est"], None)),
+    ("feasibility.schema.json", "início sem proveniência",
+     set_path(feax, ["candidates", 0, "provenance"],
+              {k: v for k, v in feax["candidates"][0]["provenance"].items() if k != "tokens_per_s_est_start"})),
     ("error.schema.json", "código fora do enum", {"error": {"code": "oops", "message": "x"}}),
     ("calibration.schema.json", "calibração sem identidade", {k: v for k, v in calx.items() if k != "machine"}),
     ("calibration.schema.json", "sem calibration_schema_version",

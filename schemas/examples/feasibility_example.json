@@ -327,7 +327,8 @@
     "decode": {
       "window_tokens": 8192,
       "answer_tokens": 1024,
-      "position_tokens": 7680
+      "position_tokens": 7680,
+      "start_position_tokens": 512
     },
     "calibration": {
       "origin": "default",
@@ -413,6 +414,7 @@
       ],
       "tier": "confortavel",
       "tokens_per_s_est": 25.99,
+      "tokens_per_s_est_start": 29.16,
       "ttft_s_est": null,
       "confidence": "medium",
       "confidence_reasons": [
@@ -431,7 +433,8 @@
         "buffer_bytes": "calculated",
         "total_bytes": "calculated",
         "n_gpu_layers": "calculated",
-        "tokens_per_s_est": "estimated"
+        "tokens_per_s_est": "estimated",
+        "tokens_per_s_est_start": "estimated"
       }
     },
     {
@@ -484,6 +487,7 @@
       ],
       "tier": "limite",
       "tokens_per_s_est": 21.6,
+      "tokens_per_s_est_start": 29.69,
       "ttft_s_est": null,
       "confidence": "medium",
       "confidence_reasons": [
@@ -501,7 +505,8 @@
         "buffer_bytes": "calculated",
         "total_bytes": "calculated",
         "n_gpu_layers": "calculated",
-        "tokens_per_s_est": "estimated"
+        "tokens_per_s_est": "estimated",
+        "tokens_per_s_est_start": "estimated"
       }
     }
   ],

@@ -903,3 +903,33 @@ Quase metade do overhead da v1 era KV: o 0.6B lê proporcionalmente mais cache, 
 leitura a um custo fixo. Os 19,8 GB/s da medição manual correspondem a 21,07 GB/s na definição v2.
 **Consequência.** Calibrações v1 são descartadas (`calibration_schema_outdated`) e o bench precisa gravar de novo,
 ou a v1 ser recalculada a partir do `measured.json` como foi feito aqui.
+
+## 2026-11-16 — tokens/s também no início da janela (opção C): contrato
+
+**Decisão (`arquiteto`; enunciado em `schemas/decode_range_spec.md`).** Cada candidato ganha
+`tokens_per_s_est_start`. É o mesmo cálculo do `tokens_per_s_est`, com o mesmo placement, os mesmos trechos e a
+mesma calibração ou eta, e com o KV lido em p̄ = ⌈min(1024, ctx)/2⌉, ou seja, uma resposta de 1024 tokens começando
+com o contexto vazio. A posição é ecoada em `inputs.decode.start_position_tokens`. O número do fim continua sendo o
+único que escolhe placement, ordena e decide `primary_for`, porque o critério é a direção do erro. A proveniência do
+início é a mesma do fim, porque as entradas são as mesmas e só muda a posição, que é uma definição. Na apresentação,
+o início é uma linha secundária, "no início de uma conversa", embaixo do número principal no web e na coluna nota no
+markdown. Ela some quando o texto formatado coincide com o do principal.
+**Alternativas descartadas.**
+- Prompt "típico" no início: seria uma constante sem medição nem fonte, e os 465 tokens do bench são do bench.
+- Usar `--prompt-tokens` como P: fica como pergunta aberta Q1, com recomendação de não usar.
+- Faixa "X–Y tok/s": o leitor ancora no extremo alto.
+- Duas colunas: o peso visual igual vira duas promessas.
+- Só tooltip: some no toque e no leitor de tela.
+- Limiar percentual para esconder o segundo número: seria uma constante inventada.
+- Campo obrigatório incondicional: invalidaria os arquivos de scout 0.2.0, que são `schema_version` 1.
+**Compatibilidade.** O campo é opcional por arquivo e obrigatório por candidato quando o arquivo declara
+`start_position_tokens`: um `allOf` na raiz do schema cobre os dois sentidos, tudo ou nada. Arquivo antigo continua
+válido e o web o renderiza como hoje, sem bump de `schema_version`. O `validate_examples.py` ganhou o caso positivo
+da forma 0.2.0 e quatro negativos.
+**Consequência aceita.** No exemplo, o MoE híbrido fica abaixo do denso no fim (21,6 contra 25,99) e acima no
+início (29,69 contra 29,16). O usuário vai ver um candidato mais rápido no início listado depois de outro, e a frase
+do `decodeNote` passa a dizer que a ordem usa o número do fim. Quando um campo depende de `inputs.decode`, a próxima
+evolução terá de seguir a mesma regra de tudo ou nada.
+**Roteamento.** `nucleo` (opus/medium) faz `estimate.py`, `solver.py`, o markdown em `cli.py`, os testes e o
+PROMPT.md. `web` (sonnet/medium) faz `render.js` e `app.js`. O markdown do plan fica com o `nucleo` porque já é
+dele (`render_markdown` foi mexido na opção B no mesmo commit do solver).
