@@ -593,3 +593,21 @@ def test_unload_failure_does_not_lose_measurement(monkeypatch, fixed_env):
     monkeypatch.setattr(B, "_ollama_request", flaky)
     r = B.measure_model(t, "ollama", None, "dense:7b", AC)
     assert r["decode_tps"] > 0
+
+
+def test_ollama_model_without_tag_matches_latest(monkeypatch, fixed_env):
+    """`ollama create x` registra "x:latest"; o bench recebe "x" e precisa achar o modelo."""
+    t = target()
+    fake = FakeOllama({"local-model:latest": t.file_bytes}, [1.0])
+    monkeypatch.setattr(B, "_ollama_request", fake)
+    assert B.ollama_check_quant("local-model", t)["architecture"] == "qwen3"
+    with pytest.raises(B.BenchError) as e:
+        B.ollama_check_quant("outro-modelo", t)
+    assert e.value.reason == "ollama_model_missing"
+
+
+def test_calibration_with_several_models_keeps_lowest_prefill():
+    """A média do prefill de modelos de tamanhos diferentes não descreve nenhum deles e superestima o maior."""
+    cal = B.build_calibration([_result("grande", 2_500_000_000, 7.95, prefill=19.9),
+                               _result("pequeno", 640_000_000, 25.1, prefill=146.8)], "2026-11-15")
+    assert cal["cpu"]["prefill_tokens_per_s"] == 19.9 and cal["cpu"]["prefill_reason"] is None

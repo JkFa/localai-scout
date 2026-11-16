@@ -399,7 +399,9 @@ def build_calibration(results: list[dict], date: str) -> dict[str, dict]:
         versions = {r.get("tool_version") for r in rs}
         prefills = [r["prefill_tps"] for r in rs]
         if all(p is not None for p in prefills):
-            prefill, reason = sum(prefills) / len(prefills), None
+            # Prefill depende do modelo: com vários, a média não descreve nenhum; o menor é o conservador
+            # (direção do erro, DECISIONS.md 2026-11-15).
+            prefill, reason = min(prefills), None
         else:
             prefill, reason = None, "prefill não estabilizou (ou não medido) em algum modelo"
         out[pool] = {
@@ -489,7 +491,8 @@ def _ollama_request(method: str, path: str, body: dict | None = None, timeout: f
 def ollama_check_quant(name: str, target: Target) -> dict:
     """Confere o blob com o file_bytes do catálogo (±1 MiB). Devolve {architecture}."""
     tags = _ollama_request("GET", "/api/tags", timeout=10.0)
-    entry = next((m for m in tags.get("models", []) if name in (m.get("name"), m.get("model"))), None)
+    want = {name, name if ":" in name else name + ":latest"}  # o Ollama lista "x:latest" para "x" (ollama create)
+    entry = next((m for m in tags.get("models", []) if want & {m.get("name"), m.get("model")}), None)
     if entry is None:
         raise BenchError("ollama_model_missing", f"modelo {name!r} não está instalado no Ollama")
     size = entry.get("size")

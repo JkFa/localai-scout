@@ -857,3 +857,19 @@ tamanho de resposta (~1000 tokens), e respostas mais longas ainda ficam um pouco
 pesos + KV lido até a posição atual, com o bench medindo em duas posições para separar os dois termos. É mais físico
 e vale para qualquer tamanho de resposta; exige enunciado novo (`arquiteto`) e mudança no `nucleo`. Quando existir,
 o tamanho fixo de 1024 deixa de ser necessário.
+
+## 2026-11-15 — calibração de dois parâmetros instalada (Qwen3-4B + Qwen3-0.6B)
+
+**Resultado (tomada, perfil performance, Ollama 0.17.6, ctx 8192, 1024 tokens gerados).** Qwen3-4B Q4_K_M: 7,95
+tok/s (19,9 GB/s efetivos), rodadas 7,95 e 7,95. Qwen3-0.6B Q8_0 (GGUF oficial importado no Ollama como
+`qwen3-0.6b-hf-q8_0`): 25,08 tok/s, rodadas 25,09 e 25,07. Ajuste `t = bytes/banda + overhead`: banda 21,63 GB/s,
+overhead 10,3 ms/token (26% do tempo por token do 0.6B, acima do piso de 5%, então a forma 2p vale). Com só o 4B
+(forma 1p), a banda era 19,1 GB/s. As 11 checagens do critério de pronto passaram contra o arquivo instalado.
+**Critério de swap (humano, opção 2).** Swap na carga do modelo é aceito desde que as rodadas usadas tenham troca
+desprezível com o swap; o que invalida a medição é o modelo ser paginado durante a medição, não processos ociosos
+irem para o swap quando ele carrega. A rodada 1 do 4B teve 5540 páginas (~22 MB) saindo e foi aceita pelo humano:
+o decode dela é idêntico ao da rodada 2, limpa (7,95 nas duas).
+**Prefill com vários modelos (humano).** `build_calibration` grava o MENOR prefill entre os modelos, não a média: a
+média de 19,9 e 146,8 (83,4) não descreve nenhum dos dois e faria o aviso `slow_prefill_cpu` citar um prefill quatro
+vezes otimista para o 4B.
+**Bug corrigido.** O bench não achava modelo criado com `ollama create x`, que o Ollama lista como `x:latest`.
