@@ -103,12 +103,14 @@ class Ctx:
     # ------------------------------------------------------------------ execução
 
     def plan(self, tag: str, system: dict | None = None, cal: dict | None = None,
-             power: dict | None = None, engines: dict | None = None, no_cal: bool = False) -> dict:
+             power: dict | None = None, engines: dict | None = None, no_cal: bool = False,
+             ctx: int | None = None, catalog: Path | None = None) -> dict:
         from scout import bench, cli
 
         sys_path = self.write(f"system_{tag}.json", system if system is not None else self.system)
-        argv = ["plan", "--json", "--system", str(sys_path), "--catalog", str(self.catalog),
-                "--tuning", str(self.tuning), "--task", self.task, "--ctx", str(self.ctx_tokens)]
+        argv = ["plan", "--json", "--system", str(sys_path), "--catalog", str(catalog or self.catalog),
+                "--tuning", str(self.tuning), "--task", self.task,
+                "--ctx", str(self.ctx_tokens if ctx is None else ctx)]
         if no_cal:
             argv.append("--no-calibration")
 
@@ -183,18 +185,79 @@ def pool_is(c: Ctx, out: dict, problems: list[str], status: str, label: str = ""
 # ---------------------------------------------------------------------------- checagens
 
 
+def ctx_for_position(position: int) -> int:
+    """ctx cujo decode previsto cai em `position` (inverso de `estimate.decode_position`).
+
+    Com ctx >= 1024 o plan prevê em ctx - 512, então ctx = position + 512. Abaixo de 1024 o plan
+    prevê em ceil(ctx / 2): para position < 512 o ctx é 2 * position (mínimo 1), que dá
+    ceil(2p / 2) = p. Os dois ramos se encontram em position = 512 (ctx = 1024).
+    """
+    from scout import estimate as E
+
+    if position >= E.DECODE_ANSWER_TOKENS // 2:
+        return position + E.DECODE_ANSWER_TOKENS // 2
+    return max(1, 2 * position)
+
+
+def bench_position(c: Ctx, model: dict, weights_bytes: int) -> int:
+    """Posição média do KV no bench que gravou o cal.json, recuperada dos bytes gravados.
+
+    `models[].bytes` = pesos ativos + KV(P + N/2) em f16 (`bench.BENCH_KV_QUANT`), então
+    p_bench = (bytes - pesos_ativos) / kv_read_bytes_per_token(modelo, 1, f16). Os pesos ativos
+    são os do `Target` do bench: weights * params_active // params_total, arredondado para baixo a
+    múltiplo de n_layers (bytes por camada x camadas). A divisão raramente é inteira, porque o
+    KV do bench é KV(2P + N) // 2, que pode ter meio token: arredonda ao inteiro mais próximo.
+    """
+    from scout import estimate as E
+    from scout.bench import BENCH_KV_QUANT
+
+    layer_read = E.bytes_per_token(weights_bytes, model["params_active"], model["params_total"]) // model["n_layers"]
+    active = layer_read * model["n_layers"]
+    per_token = E.kv_read_bytes_per_token(model, 1, BENCH_KV_QUANT)
+    kv_total = c.measured_bytes - active
+    if per_token <= 0 or kv_total < 0:
+        raise Setup(f"{c.model}: bytes do cal.json ({c.measured_bytes}) menores que os pesos ativos ({active}) "
+                    f"da quant do plan; a calibração não é desta quant")
+    return round(kv_total / per_token)
+
+
 def check1(c: Ctx) -> list[str]:
+    """Previsto x medido, os dois na MESMA posição do KV.
+
+    O plan prevê em p̄ = ctx - 512 (fim da janela); o `bytes` do cal.json inclui o KV na posição
+    média do bench (~1036). Então o plan que se compara roda com ctx = p_bench + 512 (ver
+    `ctx_for_position` para ctx < 1024), em que p̄ cai exatamente em p_bench.
+
+    A quant do bench não está no cal.json: assume-se a que o plan base (ctx de --ctx) recomenda,
+    a mesma que o bench escolheu se foi rodado com esse ctx. Como o plan com ctx menor pode preferir
+    outra quant (mais folga de memória), o plan da comparação usa um catálogo com só essa quant
+    (`catalog_bench_quant.json` em $T), para prever o mesmo arquivo que foi medido.
+    """
     p: list[str] = []
     out = c.plan("base")
     need(p, c.echo(out)["status"] == "used", f"status={c.echo(out)['status']!r}, esperado 'used'")
     pool_is(c, out, p, "applied")
     need(p, c.pool(out)["power_match"] == "same", f"power_match={c.pool(out)['power_match']!r}")
-    cand = c.cand(out)
+    quant = c.cand(out)["quant"]
+    cat = jload(c.catalog)
+    model = next((m for m in cat["models"] if m["id"] == c.model), None)
+    if model is None:
+        raise Setup(f"{c.model} não está no catálogo {c.catalog}")
+    if model.get("kv_model") != "standard":
+        raise Setup(f"{c.model}: kv_model {model.get('kv_model')!r}, posição do bench só recuperável em 'standard'")
+    weights = c.cand(out)["weights_bytes"]
+    pos = bench_position(c, model, weights)
+    pos_ctx = ctx_for_position(pos)
+    pinned = {**cat, "models": [{**model, "quants": [q for q in model["quants"]
+                                                      if q["name"] == quant["name"] and q["format"] == quant["format"]]}]}
+    pos_out = c.plan("bench_pos", ctx=pos_ctx, catalog=c.write("catalog_bench_quant.json", pinned))
     e = c.entry
     measured = 1.0 / (c.measured_bytes / e["bandwidth_bytes_per_s"] + e.get("overhead_s_per_token", 0.0))
+    cand = c.cand(pos_out)
     pred = cand["tokens_per_s_est"]
     need(p, pred is not None and abs(pred - measured) <= 0.30 * measured,
-         f"previsto {pred} tok/s fora de 30% do medido {measured:.2f} (banda/bytes do cal.json)")
+         f"previsto {pred} tok/s fora de 30% do medido {measured:.2f} "
+         f"(banda/bytes do cal.json, ambos na posição {pos}, plan com ctx={pos_ctx})")
     need(p, cand["confidence"] == "high",
          f"confiança {cand['confidence']!r} {cand['confidence_reasons']}, esperado 'high'")
     return p

@@ -28,6 +28,7 @@ GB = 1_000_000_000
 BW = 40 * GB
 BYTES = 3_280_000_000  # 4e9 params x 6,56 bpw / 8; medido = 40e9 / 3,28e9 = 12,2 tok/s
 CHECK_IDS = list(range(1, 12))
+KV_PER_TOKEN = 2 * 32 * 8 * 128 * 2  # 131072 B: o modelo sintético herda n_layers 32, 8 kv heads, head_dim 128, f16
 
 
 def _v(n):
@@ -52,26 +53,26 @@ def _identity(s: dict) -> dict:
 "gpu.name": None, "gpu.backend": None, "gpu.vram_total_bytes": None}
 
 
-def _cal(s: dict) -> dict:
+def _cal(s: dict, kv_pos: int = 0) -> dict:
     return {"schema_version": 1, "kind": "calibration", "scout_version": "0.0.0", "calibration_schema_version": CALIBRATION_SCHEMA_VERSION,
             "machine": _identity(s),
             "pools": {"cpu": [{
                 "bandwidth_bytes_per_s": BW, "overhead_s_per_token": 0.0, "form": "1p", "stable": True,
                 "power": {"on_ac": True, "profile": "performance", "not_applicable": []},
                 "tool": "ollama", "tool_version": "9.9.9", "date": "2000-01-01",
-                "models": [{"id": MODEL, "architecture": "testarch", "bytes": BYTES}],
+                "models": [{"id": MODEL, "architecture": "testarch", "bytes": BYTES + KV_PER_TOKEN * kv_pos}],
                 "prefill_tokens_per_s": None,
                 "measured_with": {"os.kernel": _v(s["os"]["kernel"]), "memory.speed_mts": _v(s["memory"]["speed_mts"]),
                                   "memory.channels": _v(s["memory"]["channels"])}}]}}
 
 
-def make_T(root: Path, *, mutate_cal=None, mutate_system=None) -> Path:
+def make_T(root: Path, *, mutate_cal=None, mutate_system=None, kv_pos: int = 0) -> Path:
     T = root / "T"
     T.mkdir()
     system = load(SYSTEM_PATHS["ddr5_64"])
     if mutate_system:
         mutate_system(system)
-    cal = _cal(load(SYSTEM_PATHS["ddr5_64"]))  # a calibração nasce da máquina ORIGINAL
+    cal = _cal(load(SYSTEM_PATHS["ddr5_64"]), kv_pos)  # a calibração nasce da máquina ORIGINAL
     if mutate_cal:
         mutate_cal(cal)
     (T / "system.json").write_text(json.dumps(system), encoding="utf-8")
@@ -122,7 +123,7 @@ def test_script_does_not_touch_cal_or_system_and_writes_variations_only_in_T(goo
     for name, content in before.items():
         assert (T / name).read_bytes() == content, f"{name} foi alterado"
     new = {p.name for p in T.iterdir()} - set(before)
-    assert new and all(re.match(r"(cal|system|plan)_.+\.json$", n) for n in new), new
+    assert new and all(re.match(r"(cal|system|plan|catalog)_.+\.json$", n) for n in new), new
     assert {"cal_schema99.json", "system_mem_unknown.json", "plan_disabled.json"} <= new
 
 
@@ -232,3 +233,83 @@ def test_script_restores_bench_functions_and_never_opens_a_socket(tmp_path, caps
     rc, v = _run_in_process(make_T(tmp_path), capsys)
     assert rc == 0 and len(v) == 11
     assert (bench.read_power, bench.engine_version) == orig
+
+
+# ------------------------------------------------------------------ checagem 1: mesma posição do KV
+
+# Bench sintético com KV na posição 1036 (P=512, N=1048 -> P + N/2). Bytes gravados no cal.json:
+#   3_280_000_000 + 131_072 * 1036 = 3_280_000_000 + 135_790_592 = 3_415_790_592
+# Medido: 40e9 / 3_415_790_592 = 11,71 tok/s. O plan com ctx 32768 prevê em 32768 - 512 = 32256, onde os
+# bytes são 3,28e9 + 131_072 * 32256 = 7_508_000_000 (aprox.) -> 5,33 tok/s, 45% do medido: a versão antiga
+# da checagem 1 (plan em --ctx) reprova. Na posição do bench a previsão é exata: 11,71.
+BENCH_POS = 1036
+MEASURED_TPS = 40e9 / (3_280_000_000 + 131_072 * BENCH_POS)
+
+
+def test_hand_value_measured_tps_for_bench_position():
+    assert BENCH_POS * KV_PER_TOKEN == 135_790_592
+    assert MEASURED_TPS == pytest.approx(11.71, abs=0.005)
+
+
+@pytest.mark.parametrize("ctx", ["8192", "32768"])
+def test_check1_passes_when_bench_position_is_far_from_ctx_minus_512(tmp_path, ctx):
+    T = make_T(tmp_path, kv_pos=BENCH_POS)
+    r = run(T, "--ctx", ctx)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert verdicts(r.stdout) == {n: "OK" for n in CHECK_IDS}
+    # o plan da comparação foi feito na posição do bench (ctx 1036 + 512 = 1548), não em --ctx
+    plan = json.loads((T / "plan_bench_pos.json").read_text())
+    assert plan["inputs"]["decode"]["window_tokens"] == BENCH_POS + 512
+    assert plan["inputs"]["decode"]["position_tokens"] == BENCH_POS
+    cand = next(c for c in plan["candidates"] if c["model"]["id"] == MODEL)
+    assert cand["tokens_per_s_est"] == pytest.approx(MEASURED_TPS, abs=0.01)
+
+
+def test_old_comparison_would_fail_here(tmp_path):
+    """Prova de que o cenário acima distingue as duas definições: o plan em ctx 32768 prevê < 70% do medido."""
+    from scout import cli
+
+    T = make_T(tmp_path, kv_pos=BENCH_POS)
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert cli.main(["plan", "--json", "--system", str(T / "system.json"), "--catalog", str(T / "catalog.json"),
+                         "--tuning", str(FIX / "tuning_test.json"), "--task", "chat", "--ctx", "32768",
+                         "--calibration", str(T / "cal.json")]) == 0
+    cand = next(c for c in json.loads(buf.getvalue())["candidates"] if c["model"]["id"] == MODEL)
+    assert cand["tokens_per_s_est"] < 0.70 * MEASURED_TPS
+
+
+@pytest.mark.parametrize("position,ctx", [
+    (1036, 1548),  # >= 512: ctx - 512 = position
+    (512, 1024),   # emenda: ctx = 1024 ainda prevê em 1024 - 512
+    (300, 600),    # < 512: abaixo de 1024 o plan prevê em ceil(ctx/2) = 300
+    (1, 2),
+    (0, 1),        # ctx mínimo 1 (ceil(1/2) = 1: o mais próximo de 0)
+])
+def test_ctx_for_position_hand_values(position, ctx):
+    assert _load_script().ctx_for_position(position) == ctx
+
+
+@pytest.mark.parametrize("position", [1, 2, 255, 300, 511, 512, 513, 1036, 32256])
+def test_ctx_for_position_inverts_decode_position(position):
+    from scout import estimate as E
+
+    assert E.decode_position(_load_script().ctx_for_position(position)) == position
+
+
+@pytest.mark.parametrize("name,patch", [
+    ("ignora a posição (ctx fixo 32768)", lambda mod: setattr(mod, "ctx_for_position", lambda position: 32768)),
+    ("posição do bench errada (32256)", lambda mod: setattr(mod, "bench_position", lambda *a, **k: 32256)),
+])
+def test_mutant_wrong_position_fails_check_1(tmp_path, capsys, monkeypatch, name, patch):
+    T = make_T(tmp_path, kv_pos=BENCH_POS)
+    mod = _load_script()
+    assert mod.main(args(T)) == 0  # sem o mutante, tudo OK
+    capsys.readouterr()
+    patch(mod)
+    rc = mod.main(args(T))
+    v = verdicts(capsys.readouterr().out)
+    assert rc == 1 and v[1] == "FALHA", name
+    assert [n for n, x in v.items() if x == "FALHA"] == [1]
