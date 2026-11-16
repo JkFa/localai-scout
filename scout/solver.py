@@ -98,7 +98,7 @@ class Attempt:
     pools_used: tuple[Pool, ...]
     missing: int  # bytes para chegar ao tier limite; <= 0 se cabe
     # Critério de ordem quando tokens/s é null (m7_fixes.md F4). Nunca exibidos.
-    bytes_cpu_per_token: int = 0  # bytes lidos da RAM por token (MoE: fração ativa)
+    bytes_cpu_per_token: int = 0  # bytes lidos da RAM por token (pesos, MoE: fração ativa; + KV das camadas)
     bytes_per_token: int = 0      # bytes lidos por token, total
     cal_pools: tuple[str, ...] = ()  # pools com camadas cujo trecho usou calibração
     eta_pools: tuple[str, ...] = ()  # pools com camadas cujo trecho usou bw × eta
@@ -342,10 +342,13 @@ def _attempts(
     layer_bytes_read: int,
     pools: dict[str, Pool],
     allow_hybrid: bool = True,
+    kv_read: int = 0,
 ) -> list[Attempt]:
     """Todas as tentativas calculáveis de um (modelo, quant), em ordem de PLACEMENTS.
 
     allow_hybrid=False: quant acima de max_bpw_offload (m7_fixes.md Fa).
+    kv_read: bytes de KV lidos por token na posição do decode previsto (todas as
+    camadas); cada trecho lê a parte das SUAS camadas (n / n_layers).
     """
     out: list[Attempt] = []
     gpu = pools.get("gpu") or pools.get("unified")
@@ -355,20 +358,18 @@ def _attempts(
     def segments(n_gpu: int) -> list[tuple[Pool | None, int]]:
         return [(p, n) for p, n in ((gpu, n_gpu), (cpu, n_layers - n_gpu)) if n > 0]
 
+    def seg_bytes(n: int) -> int:
+        """Pesos (fração ativa) + KV das n camadas do trecho."""
+        return layer_bytes_read * n + kv_read * n // n_layers
+
     def tps(n_gpu: int) -> float | None:
-        if not any(p is not None and p.cal for p, _ in segments(n_gpu)):
-            bw_gpu = gpu.bw if gpu is not None else None
-            eta_gpu = gpu.eta if gpu is not None else 1.0
-            bw_cpu = cpu.bw if cpu is not None else None
-            eta_cpu = cpu.eta if cpu is not None else 1.0
-            return E.tokens_per_s(layer_bytes_read, n_layers, n_gpu, bw_gpu, bw_cpu, eta_gpu, eta_cpu)
-        # Calibração (bench_spec.md): cada trecho calibrado usa bytes/banda + overhead.
+        # Trecho calibrado: bytes/banda + overhead (bench_spec.md); senão bytes/(bw × eta).
         t = 0.0
         for p, n in segments(n_gpu):
             if p is None:
                 return None
             cal = p.cal or {}
-            seg = E.segment_seconds(layer_bytes_read * n, p.bw, p.eta,
+            seg = E.segment_seconds(seg_bytes(n), p.bw, p.eta,
                                     cal.get("bandwidth_bytes_per_s"), float(cal.get("overhead_s_per_token") or 0.0))
             if seg is None:
                 return None
@@ -379,7 +380,7 @@ def _attempts(
         segs = [p for p, _ in segments(n_gpu) if p is not None]
         return Attempt(placement, n_gpu, usages, weights + kv + buf, _worst_tier(usages),
                        tps(n_gpu), used, _missing(usages),
-                       layer_bytes_read * (n_layers - n_gpu), layer_bytes_read * n_layers,
+                       seg_bytes(n_layers - n_gpu), seg_bytes(n_layers),
                        tuple(p.id for p in segs if p.cal), tuple(p.id for p in segs if not p.cal))
 
     # gpu_full (ou o pool unificado inteiro)
@@ -492,6 +493,8 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
     n_layers: int = m["n_layers"]
     floor_bpw = E.min_bpw(params_total)
     kv = E.kv_bytes(n_layers, m["n_kv_heads"], m["head_dim"], ctx, intent.kv_quant, intent.batch)
+    # Decode previsto no fim da janela (decisão B): KV lido na posição ctx − 512.
+    kv_read = E.kv_read_bytes_per_token(m, E.decode_position(ctx), intent.kv_quant)
     buf = E.buffer_bytes(ctx)
 
     skipped: list[dict[str, Any]] = []
@@ -520,7 +523,7 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
         # derrubaria a velocidade; vale mais uma quant menor inteira na GPU).
         hybrid_blocked = (max_bpw_offload is not None and bpw > max_bpw_offload
                           and q["format"] == "GGUF" and "gpu" in pools and "cpu" in pools)
-        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools)
+        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools, kv_read=kv_read)
         if embed_only:
             # Embeddings não fazem decode: tokens/s por banda não se aplica. Sem
             # tokens/s, placement e ordem saem pelo desempate por bytes (F4).
@@ -935,6 +938,13 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
                 "batch": intent.batch,
                 "kv_quant": intent.kv_quant,
                 **({"prompt_tokens": intent.prompt_tokens} if intent.prompt_tokens is not None else {}),
+            },
+            # Suposição do tokens/s previsto (decisão B): uma resposta de answer_tokens
+            # terminando no limite da janela; o KV é lido na posição média position_tokens.
+            "decode": {
+                "window_tokens": intent.ctx,
+                "answer_tokens": E.DECODE_ANSWER_TOKENS,
+                "position_tokens": E.decode_position(intent.ctx),
             },
             "calibration": cal_echo,
             **({"power": power_echo} if cal_echo["status"] in ("used", "discarded") else {}),

@@ -8,7 +8,7 @@ import pytest
 from conftest import CATALOG_PATH, FIX, SYSTEM_PATHS, load
 from scout import bench as B
 from scout import calstore
-from scout.calibration import machine_identity
+from scout.calibration import CALIBRATION_SCHEMA_VERSION, machine_identity
 from scout.cli import main
 
 TUNING = load(FIX / "tuning_test.json")
@@ -155,7 +155,12 @@ def test_ollama_measure_end_to_end(monkeypatch, fixed_env):
     r = B.measure_model(t, "ollama", None, "dense:7b", AC, now=lambda: __import__("datetime").datetime(2026, 11, 15))
     assert r["tool"] == "ollama" and r["tool_version"] == "9.9.9" and r["architecture"] == "qwen3"
     assert r["stable"] is True and len(r["rounds"]) == 4
-    assert r["effective_bandwidth_bytes_per_s"] == round(t.bytes_per_token * r["decode_tps"])
+    # bytes por token = pesos + KV f16 na posição média P + N/2 = 532 + 512 = 1044:
+    # 2*32*8*128*1044*2 = 136_839_168 -> 7_650_000_000 + 136_839_168
+    assert r["weights_bytes_per_token"] == t.bytes_per_token == 7_650_000_000
+    assert r["bytes_per_token"] == 7_786_839_168 and r["kv_quant_assumed"] == "f16"
+    assert (r["decode_context_tokens"], r["decode_gen_tokens"]) == (532, B.GEN_TOKENS)
+    assert r["effective_bandwidth_bytes_per_s"] == round(7_786_839_168 * r["decode_tps"])
     assert r["prompt_tokens"] == 532 and r["gen_tokens"] == B.GEN_TOKENS and r["power"] == AC
     # parâmetros da medição: temperatura 0, semente fixa, GEN_TOKENS tokens, threads de performance, prefixo por rodada
     g = fake.generated
@@ -242,6 +247,9 @@ def test_llama_bench_measure_uses_plan_parameters(monkeypatch, fixed_env):
     c = cmds[0]
     assert c[c.index("-ngl") + 1] == "0" and c[c.index("-t") + 1] == "16" and c[c.index("-n") + 1] == str(B.GEN_TOKENS)
     assert r["decode_tps"] == 6.25 and r["prompt_tokens"] == 512
+    # tg do llama-bench parte do contexto vazio: posição média 0 + 1024/2 = 512 -> KV 2*32*8*128*512*2
+    assert (r["decode_context_tokens"], r["decode_gen_tokens"]) == (0, B.GEN_TOKENS)
+    assert r["bytes_per_token"] == 7_650_000_000 + 67_108_864
 
 
 # ---- energia
@@ -421,7 +429,7 @@ def test_cli_run_on_battery_warns_and_records(monkeypatch, tmp_path, capsys):
     c = json.loads(cal.read_text(encoding="utf-8"))
     e = c["pools"]["cpu"][0]
     assert e["power"] == bat and e["form"] == "1p" and e["tool"] == "ollama" and e["tool_version"] == "9.9.9"
-    assert c["machine"] == machine_identity(SYS) and c["calibration_schema_version"] == 1
+    assert c["machine"] == machine_identity(SYS) and c["calibration_schema_version"] == CALIBRATION_SCHEMA_VERSION == 2
     assert tuning.read_bytes() == before  # tuning nunca é gravado
     assert calstore.validate_doc(c) == []
 
@@ -611,3 +619,9 @@ def test_calibration_with_several_models_keeps_lowest_prefill():
     cal = B.build_calibration([_result("grande", 2_500_000_000, 7.95, prefill=19.9),
                                _result("pequeno", 640_000_000, 25.1, prefill=146.8)], "2026-11-15")
     assert cal["cpu"]["prefill_tokens_per_s"] == 19.9 and cal["cpu"]["prefill_reason"] is None
+
+
+def test_decode_position_averages_used_rounds_in_integer_tokens():
+    rs = [B.Round(5.0, None, 500, 1000, 500), B.Round(5.0, None, 531, 1023, 531)]
+    assert B._decode_position(rs) == (516, 1012)  # (1031/2 -> 516, 2023/2 -> 1012), meio arredonda para cima
+    assert B._decode_position([B.Round(5.0, None, 500)]) is None  # sem contagem: não inventa posição

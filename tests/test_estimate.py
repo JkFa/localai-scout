@@ -287,3 +287,38 @@ def test_fmt_gb(n, expected):
 def test_fmt_gb_is_not_decimal_gb():
     assert "GiB" in E.fmt_gb(5) and " GB" not in E.fmt_gb(5)
     assert E.fmt_gb(1_000_000_000) != "1.00 GB"
+
+
+# ---- leitura do KV no decode (PROMPT.md, Throughput)
+
+QWEN3_4B_ARCH = {"n_layers": 36, "n_kv_heads": 8, "head_dim": 128, "kv_model": "standard"}  # sintético, só a forma
+
+
+def test_kv_read_bytes_per_token_hand_computed():
+    # 2 * 36 * 8 * 128 * 1036 * 2 bytes (f16) = 152_764_416
+    assert E.kv_read_bytes_per_token(QWEN3_4B_ARCH, 1036, "f16") == 152_764_416
+    assert E.kv_read_bytes_per_token(QWEN3_4B_ARCH, 0) == 0
+    # q8_0 lê metade, q4_0 um quarto: mesma tabela de bits do kv_bytes
+    assert E.kv_read_bytes_per_token(QWEN3_4B_ARCH, 1036, "q8_0") == 76_382_208
+    assert E.kv_read_bytes_per_token(QWEN3_4B_ARCH, 1036, "q4_0") == 38_191_104
+    assert E.kv_read_bytes_per_token(QWEN3_4B_ARCH, 1036) == E.kv_bytes(36, 8, 128, 1036, "f16", 1)
+
+
+def test_kv_read_rejects_mla_and_negative_position():
+    with pytest.raises(ValueError):
+        E.kv_read_bytes_per_token(dict(QWEN3_4B_ARCH, kv_model="mla"), 10)
+    with pytest.raises(ValueError):
+        E.kv_read_bytes_per_token(QWEN3_4B_ARCH, -1)
+
+
+def test_decode_bytes_per_token_is_weights_plus_kv_at_mean_position():
+    # P = 524, N = 1024: posição média 524 + 512 = 1036
+    assert E.decode_bytes_per_token(2_500_000_000, QWEN3_4B_ARCH, 524, 1024) == 2_500_000_000 + 152_764_416
+    # N ímpar: KV(2P + N) // 2, inteiro; P = 0, N = 3 -> KV(1.5) = 2*36*8*128*3*2 // 2 = 221_184
+    assert E.decode_bytes_per_token(0, QWEN3_4B_ARCH, 0, 3) == 221_184
+    assert isinstance(E.decode_bytes_per_token(1, QWEN3_4B_ARCH, 1, 1, "q8_0"), int)
+
+
+@pytest.mark.parametrize("ctx,pos", [(8192, 7680), (1024, 512), (32768, 32256), (1000, 500), (999, 500), (1, 1)])
+def test_decode_position(ctx, pos):
+    assert E.decode_position(ctx) == pos

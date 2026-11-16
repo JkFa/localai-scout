@@ -81,7 +81,8 @@ def test_calibrated_cpu_uses_bytes_over_bandwidth_plus_overhead(systems, catalog
     assert c["placement"] == "cpu_only"
     m = _model(catalog, "test/dense-7b")
     layer = E.bytes_per_token(c["weights_bytes"], m["params_active"], m["params_total"]) // m["n_layers"]
-    expected = 1 / (layer * m["n_layers"] / 20_000_000_000 + 0.002)
+    kv_read = 2 * 32 * 8 * 128 * (8192 - 512) * 2  # KV f16 no fim da janela de 8192 (posição 7680)
+    expected = 1 / ((layer * m["n_layers"] + kv_read) / 20_000_000_000 + 0.002)
     assert c["tokens_per_s_est"] == pytest.approx(expected, abs=0.006)
     assert c["tokens_per_s_basis"] == "calibration"
     assert c["provenance"]["tokens_per_s_est"] == "calculated"
@@ -558,3 +559,13 @@ def test_slow_prefill_outside_exact_match_cites_lowest_eligible_prefill(systems,
     out = _plan(systems, catalog, dict(tuning, prefill_reference=ref), pools)   # casamento exato: a escolhida
     msg = next(w["message"] for w in out["warnings"] if w["code"] == "slow_prefill_cpu")
     assert "~40 tokens/s" in msg
+
+
+def test_calibration_v1_is_discarded_after_kv_in_formula(systems, catalog, tuning):
+    # v2: a banda gravada passou a incluir o KV lido; uma calibração v1 tem outro significado
+    assert C.CALIBRATION_SCHEMA_VERSION == 2
+    d = doc(systems["ddr5_64"], {"cpu": [entry()]})
+    d["calibration_schema_version"] = 1
+    out = _plan(systems, catalog, tuning, d=d)
+    assert out["inputs"]["calibration"]["pools"]["cpu"]["reasons"] == ["calibration_schema_outdated"]
+    assert _c(out, "test/dense-7b")["tokens_per_s_basis"] == "eta"

@@ -77,7 +77,7 @@ def cal_doc(ident_all, pools):
     mw = {k: ident_all[k] for k in MEASURED_WITH}
     pools = {pid: [dict(e, measured_with=dict(mw)) for e in es] for pid, es in pools.items()}
     return {"schema_version": 1, "kind": "calibration", "scout_version": "0.0.0",
-            "calibration_schema_version": 1, "machine": machine, "pools": pools}
+            "calibration_schema_version": C.CALIBRATION_SCHEMA_VERSION, "machine": machine, "pools": pools}
 
 
 def plan(system, catalog, tuning, doc=None):

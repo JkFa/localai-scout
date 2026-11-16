@@ -155,26 +155,52 @@ calculado por pool, contra o orçamento de cada um, e vale o PIOR dos dois
 Quant acima de max_bpw_offload não é avaliada em hybrid: ver o limiar de
 offload no algoritmo de geração de candidatos, abaixo.
 
-Throughput, somando os dois trechos:
+Throughput, somando os dois trechos. A cada token o decode lê os pesos ativos E
+o KV cache até a posição atual p, que cresce ao longo da resposta:
 
-  t_tok = (bytes_camada * n_gpu) / (bw_gpu * eta_gpu)
-        + (bytes_camada * (n_layers - n_gpu)) / (bw_cpu * eta_cpu)
+  kv_por_token(p) = 2 * n_layers * n_kv_heads * head_dim * p * elem_bytes
+                    (mesma tabela de bits do KV de memória; só kv_model standard)
+  bytes_por_token(P, N) = pesos_ativos + kv_por_token(P + N/2)
+                    (média numa geração de N tokens após um prompt de P tokens;
+                     inteiro: kv_por_token(2P + N) // 2)
+
+O tokens/s PREVISTO (decisão B do humano) é o do fim de uma janela: uma
+resposta de N = 1024 tokens terminando no limite do contexto pedido, ou seja,
+KV lido na posição média p̄ = ctx − 512 (ctx < 1024: p̄ = ctx/2, para cima),
+com o kv_quant do intent. A suposição é ecoada em inputs.decode
+{window_tokens, answer_tokens, position_tokens} e dita no markdown ("tokens/s
+no fim de uma janela de 8192 tokens"). Por trecho:
+
+  kv_camada = kv_por_token(p̄) / n_layers   (cada camada lê o SEU KV, no pool
+                                              onde a camada está)
+  bytes_trecho = (bytes_camada + kv_camada) * camadas_do_trecho
+  t_tok = bytes_trecho_gpu / (bw_gpu * eta_gpu)
+        + bytes_trecho_cpu / (bw_cpu * eta_cpu)
   tokens_per_s = 1 / t_tok
+
+(No código, bytes_trecho = bytes_camada * n + kv_por_token(p̄) * n // n_layers.
+Batch não multiplica a leitura por token. Contexto maior => tokens/s menor.)
 
 eta_gpu = 0.75 e eta_cpu = 0.60 são empíricos: ficam em data/tuning.json, nunca
 fixos no código, e são só o chute inicial; o bench nunca os altera (M4). Reporte
 ttft_s_est separado de tokens_per_s_est: prefill é limitado por computação e
 decode por banda de memória, e o usuário sente os dois de formas diferentes.
 
-Calibração medida (scout bench, M4; schemas/bench_spec.md). Se
-tuning.calibration.<pool> existe, o trecho daquele pool troca bytes/(bw × eta)
-por
+Calibração medida (scout bench, M4; schemas/bench_spec.md e
+schemas/calibration_store_spec.md). Se a calibração local (calibration.json,
+fora do repositório) tem uma entrada aplicada ao pool, o trecho daquele pool
+troca bytes/(bw × eta) por
 
   t_trecho = bytes_trecho / calibration.bandwidth_bytes_per_s
            + calibration.overhead_s_per_token
 
-com bytes_trecho = bytes_camada_lidos × camadas do trecho (MoE com a fração
-ativa). Trecho de pool sem calibração continua com bw × eta. Num híbrido com os
+com bytes_trecho = (bytes_camada_lidos + kv_camada) × camadas do trecho (MoE:
+fração ativa só nos pesos; o KV é lido inteiro), na mesma posição p̄. O bench
+grava a banda já com o KV: bytes_por_token(P, N) com P = prompt_eval_count e
+N = eval_count reais (média das rodadas usadas; llama-bench: P = 0), KV f16
+(padrão do Ollama), e o measured.json guarda também weights_bytes_per_token.
+Por isso calibration_schema_version = 2; uma calibração v1 (banda só de pesos)
+é descartada com calibration_schema_outdated. Trecho de pool sem calibração continua com bw × eta. Num híbrido com os
 dois pools calibrados, cada trecho soma o seu overhead inteiro. O candidato
 registra tokens_per_s_basis: calibration (todos os trechos com camadas
 calibrados; proveniência calculated), eta (nenhum) ou mixed (um de cada;
@@ -203,7 +229,7 @@ MEDIÇÃO em data/tuning.json, bloco prefill_reference {tokens_per_s,
 measured_on, tool, date, power}, nunca de literal no código: a mensagem cita
 ~round(tokens_per_s) tokens/s na máquina medida e "um prompt de N tokens leva
 perto de um minuto", com N = tokens_per_s * 60 em 2 algarismos
-significativos. Se tuning.calibration.cpu tem prefill_tokens_per_s (medido
+significativos. Se a entrada aplicada do pool cpu tem prefill_tokens_per_s (medido
 nesta máquina pelo bench), a mensagem cita essa medição, com os modelos
 medidos, no lugar da referência. Sem nenhum dos dois, o aviso sai sem número.
 O bloco é ecoado em inputs.tuning.prefill_reference. Se falta a banda de um trecho que
@@ -216,7 +242,9 @@ MoE, onde memória e velocidade divergem:
   memória usa params_total
   bytes_lidos_por_token = weights * (params_active / params_total)
   no throughput, bytes_camada lidos = bytes_lidos_por_token // n_layers,
-  nos DOIS trechos (GPU e CPU) do híbrido (DECISIONS.md A20)
+  nos DOIS trechos (GPU e CPU) do híbrido (DECISIONS.md A20); o KV lido
+  (kv_por_token) NÃO é escalado pela fração ativa: a atenção de todas as
+  camadas lê o cache inteiro
 
 Isto é obrigatório. Um MoE de 30B com 3B ativos roda em CPU com RAM sobrando,
 e um solver que use só params_total o rejeita por engano — justamente o caso

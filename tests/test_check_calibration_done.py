@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from conftest import FIX, ROOT, SYSTEM_PATHS, load
+from scout.calibration import CALIBRATION_SCHEMA_VERSION
 
 SCRIPT = ROOT / "schemas" / "check_calibration_done.py"
 MODEL = "test/synth-4b"
@@ -52,7 +53,7 @@ def _identity(s: dict) -> dict:
 
 
 def _cal(s: dict) -> dict:
-    return {"schema_version": 1, "kind": "calibration", "scout_version": "0.0.0", "calibration_schema_version": 1,
+    return {"schema_version": 1, "kind": "calibration", "scout_version": "0.0.0", "calibration_schema_version": CALIBRATION_SCHEMA_VERSION,
             "machine": _identity(s),
             "pools": {"cpu": [{
                 "bandwidth_bytes_per_s": BW, "overhead_s_per_token": 0.0, "form": "1p", "stable": True,

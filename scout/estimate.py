@@ -98,6 +98,45 @@ def kv_bytes(
     return 2 * n_layers * n_kv_heads * head_dim * ctx * elem_bits * batch // 8
 
 
+# Decode previsto (decisão B do humano): resposta de 1024 tokens terminando no
+# limite da janela pedida. Não é fator de eficiência; é a definição do número.
+DECODE_ANSWER_TOKENS = 1024
+
+
+def kv_read_bytes_per_token(model: dict, position: int, kv_quant: str = "f16") -> int:
+    """Bytes de KV lidos para gerar o token na posição `position`:
+    2 * n_layers * n_kv_heads * head_dim * position * elem_bytes.
+
+    Mesma fórmula e mesma tabela de bits de kv_bytes (com ctx = position,
+    batch = 1). Só kv_model "standard" (MHA/GQA): MLA não segue esta fórmula
+    e é rejeitado pelo solver, aqui levanta ValueError.
+    """
+    if model.get("kv_model") != "standard":
+        raise ValueError(f"kv_model {model.get('kv_model')!r}: leitura de KV só modelada para 'standard'")
+    if position < 0:
+        raise ValueError("position precisa ser >= 0")
+    return kv_bytes(model["n_layers"], model["n_kv_heads"], model["head_dim"], position, kv_quant, 1)
+
+
+def decode_bytes_per_token(weights_active: int, model: dict, prompt_tokens: int, gen_tokens: int,
+                           kv_quant: str = "f16") -> int:
+    """Média de bytes lidos por token numa geração de N tokens após um prompt de P:
+    weights_active + KV(P + N/2). Inteiro: KV(2P + N) // 2 (o KV é linear na posição)."""
+    if prompt_tokens < 0 or gen_tokens < 0:
+        raise ValueError("prompt_tokens e gen_tokens precisam ser >= 0")
+    return weights_active + kv_read_bytes_per_token(model, 2 * prompt_tokens + gen_tokens, kv_quant) // 2
+
+
+def decode_position(ctx: int) -> int:
+    """Posição média do decode previsto: ctx − N/2 com N = 1024 (resposta que termina
+    no limite da janela); ctx < 1024 -> ctx/2, arredondado para cima (mais KV, mais lento)."""
+    if ctx < 1:
+        raise ValueError("ctx precisa ser >= 1")
+    if ctx < DECODE_ANSWER_TOKENS:
+        return (ctx + 1) // 2
+    return ctx - DECODE_ANSWER_TOKENS // 2
+
+
 def buffer_bytes(ctx: int) -> int:
     """Buffer de computação: 400e6 + 20e3 * ctx."""
     return BUFFER_BASE_BYTES + BUFFER_PER_TOKEN_BYTES * ctx

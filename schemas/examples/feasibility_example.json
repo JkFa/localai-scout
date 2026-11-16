@@ -324,10 +324,15 @@
       "eta_cpu": 0.6,
       "source": "default"
     },
+    "decode": {
+      "window_tokens": 8192,
+      "answer_tokens": 1024,
+      "position_tokens": 7680
+    },
     "calibration": {
       "origin": "default",
       "status": "absent",
-      "calibration_schema_version": 1,
+      "calibration_schema_version": 2,
       "store": null,
       "match": [],
       "pools": {}
@@ -407,7 +412,7 @@
         }
       ],
       "tier": "confortavel",
-      "tokens_per_s_est": 29.41,
+      "tokens_per_s_est": 25.99,
       "ttft_s_est": null,
       "confidence": "medium",
       "confidence_reasons": [
@@ -478,7 +483,7 @@
         }
       ],
       "tier": "limite",
-      "tokens_per_s_est": 30.51,
+      "tokens_per_s_est": 21.6,
       "ttft_s_est": null,
       "confidence": "medium",
       "confidence_reasons": [

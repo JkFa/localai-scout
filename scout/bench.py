@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -35,6 +35,9 @@ TOL = 0.05
 MAX_ROUNDS = 6
 OVERHEAD_MIN_SHARE = 0.05
 MIB = 1024 * 1024
+# KV do Ollama: f16 é o padrão (OLLAMA_KV_CACHE_TYPE não definido). Suposição registrada no
+# measured.json (kv_quant_assumed); se o usuário mudou o tipo do cache, a banda gravada sai errada.
+BENCH_KV_QUANT = "f16"
 MIN_GEN_TOKENS = 768  # 75% de GEN_TOKENS: menos que isso e a média fica de outra posição da resposta
 
 
@@ -57,7 +60,9 @@ class Target:
     ctx: int
     threads: int | None
     pool: str
-    bytes_per_token: int
+    bytes_per_token: int  # só PESOS (fração ativa); o KV entra na medição, pela posição real
+    # n_layers, n_kv_heads, head_dim, kv_model: para o KV lido por token (E.kv_read_bytes_per_token)
+    model_arch: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,8 @@ class Round:
     decode_tps: float
     prefill_tps: float | None
     prompt_tokens: int | None
+    gen_tokens: int | None = None              # N: tokens gerados nesta rodada (eval_count)
+    decode_context_tokens: int | None = None   # P: contexto antes do 1º token gerado
 
 
 # ------------------------------------------------------------ alvo (o que o plan recomendou)
@@ -93,8 +100,9 @@ def build_target(system: dict, catalog: dict, model_id: str, ctx: int, tuning: d
     n_layers = model["n_layers"]
     layer_read = E.bytes_per_token(weights, model["params_active"], model["params_total"]) // n_layers
     n_gpu = cand["n_gpu_layers"]
+    arch = {k: model[k] for k in ("n_layers", "n_kv_heads", "head_dim", "kv_model")}
     return Target(model_id, cand["quant"]["name"], quant["file_bytes"], weights, n_layers, n_gpu, ctx,
-                  cand["n_threads"], cand["by_pool"][0]["pool"], layer_read * n_layers)
+                  cand["n_threads"], cand["by_pool"][0]["pool"], layer_read * n_layers, arch)
 
 
 # ------------------------------------------------------------ energia
@@ -339,14 +347,26 @@ def stabilize(measure: Callable[[int], Round], tol_rounds: int = MAX_ROUNDS) -> 
     out_rounds = []
     for i, r in enumerate(rounds):
         out_rounds.append({"round": i + 1, "decode_tps": r.decode_tps, "prefill_tps": r.prefill_tps,
-                           "prompt_tokens": r.prompt_tokens,
+                           "prompt_tokens": r.prompt_tokens, "gen_tokens": r.gen_tokens,
+                           "decode_context_tokens": r.decode_context_tokens,
                            "used_decode": i in d_used, "used_prefill": i in p_used})
     return {
         "warmup": {"decode_tps": warm.decode_tps, "prefill_tps": warm.prefill_tps, "discarded": True},
         "rounds": out_rounds, "decode_tps": decode, "stable": dj is not None,
         "prefill_tps": prefill, "prefill_stable": pj is not None if has_prefill else None,
         "prompt_tokens": rounds[-1].prompt_tokens,
+        "decode_position": _decode_position([rounds[i] for i in sorted(set(d_used))]),
     }
+
+
+def _decode_position(used: list[Round]) -> tuple[int, int] | None:
+    """(P, N) médios das rodadas usadas no decode, em tokens inteiros; None se faltar contagem."""
+    if not used or any(r.gen_tokens is None or r.decode_context_tokens is None for r in used):
+        return None
+    k = len(used)
+    p = sum(r.decode_context_tokens for r in used)  # type: ignore[misc]
+    n = sum(r.gen_tokens for r in used)  # type: ignore[misc]
+    return (p + k // 2) // k, (n + k // 2) // k
 
 
 # ------------------------------------------------------------ ajuste (puro)
@@ -468,7 +488,8 @@ def parse_llama_bench(text: str) -> tuple[float, float | None, str | None]:
 def llama_bench_round(gguf: str, target: Target) -> tuple[Round, str | None]:
     cmd = llama_bench_cmd(gguf, target.n_gpu_layers, target.threads) + ["-r", "1", "-o", "json"]
     dec, pre, ver = parse_llama_bench(_exec(cmd, 900.0))
-    return Round(dec, pre, PREFILL_TOKENS), ver
+    # tg do llama-bench gera -n tokens a partir de contexto vazio (n_prompt = 0 na linha de geração).
+    return Round(dec, pre, PREFILL_TOKENS, GEN_TOKENS, 0), ver
 
 
 def _ollama_request(method: str, path: str, body: dict | None = None, timeout: float = 600.0) -> dict:
@@ -524,7 +545,7 @@ def ollama_round(name: str, target: Target, prompt: str, n: int) -> Round:
         raise BenchError("bad_output", "resposta do Ollama sem contadores de avaliação") from e
     if ec < MIN_GEN_TOKENS or ed <= 0:
         raise BenchError("short_generation", f"geração curta demais ({ec} tokens) para medir decode")
-    return Round(ec / ed * 1e9, pc / pd * 1e9 if pd > 0 and pc > 0 else None, pc)
+    return Round(ec / ed * 1e9, pc / pd * 1e9 if pd > 0 and pc > 0 else None, pc, ec, pc)
 
 
 # ------------------------------------------------------------ orquestração
@@ -588,7 +609,12 @@ def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str
     for r in res["rounds"]:
         r.update(swaps.get(r["round"], nil))
     version = engine_version(tool)
-    bw = int(round(target.bytes_per_token * res["decode_tps"]))
+    pos = res["decode_position"]
+    if pos is None:
+        raise BenchError("bad_output", "rodada sem contagem de tokens de prompt e de geração; sem posição do KV")
+    # bytes por token = pesos ativos + KV lido na posição média P + N/2 (PROMPT.md, Throughput)
+    bpt = E.decode_bytes_per_token(target.bytes_per_token, target.model_arch, pos[0], pos[1], BENCH_KV_QUANT)
+    bw = int(round(bpt * res["decode_tps"]))
     return {
         "model_id": target.model_id, "tool": tool, "tool_version": version,
         "ollama_model": ollama_model if tool == "ollama" else None, "architecture": arch,
@@ -597,7 +623,9 @@ def measure_model(target: Target, tool: str, gguf: str | None, ollama_model: str
         "warmup": res["warmup"], "rounds": res["rounds"],
         "decode_tps": res["decode_tps"], "stable": res["stable"],
         "prefill_tps": res["prefill_tps"], "prefill_stable": res["prefill_stable"],
-        "bytes_per_token": target.bytes_per_token, "effective_bandwidth_bytes_per_s": bw,
+        "bytes_per_token": bpt, "weights_bytes_per_token": target.bytes_per_token,
+        "kv_quant_assumed": BENCH_KV_QUANT, "decode_context_tokens": pos[0], "decode_gen_tokens": pos[1],
+        "effective_bandwidth_bytes_per_s": bw,
         "conditions": {"before": cond_before, "after": cond_after},
         "power": power, "on_battery_warning": power["on_ac"] is False,
         "measured_at": now().strftime("%Y-%m-%dT%H:%M:%SZ"),

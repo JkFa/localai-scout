@@ -16,7 +16,7 @@ from typing import Any
 
 from scout.estimate import fmt_gb, fmt_gbps
 
-CALIBRATION_SCHEMA_VERSION = 1
+CALIBRATION_SCHEMA_VERSION = 2  # 2: bytes por token inclui o KV lido (banda de significado novo)
 
 ORIGINS: tuple[str, ...] = ("flag", "env", "default", "disabled")
 POWER_ATTRS: tuple[str, ...] = ("on_ac", "profile")

@@ -250,8 +250,9 @@ def test_profile1_cpu8(systems, catalog):
     assert tiny["kv_bytes"] == 268_435_456 and tiny["buffer_bytes"] == 563_840_000
     assert tiny["tier"] == "confortavel"       # 2_298_525_456 <= 0.8 * 5_589_934_592 = 4_471_947_673
     assert tiny["n_threads"] == 4              # núcleos de performance; lógicos seriam 8
-    # t = 91_640_625*16 / (21.328e9 * 0.6) = 0.114581 s -> 8.7276 tok/s
-    assert tiny["tokens_per_s_est"] == pytest.approx(8.7276, rel=1e-3)
+    # decode no fim da janela de 8192 (posição 7680): KV lido = 2*16*8*64*7680*2 = 251_658_240
+    # t = (91_640_625*16 + 251_658_240) / (21.328e9 * 0.6) = 0.134243 s -> 7.4491 tok/s
+    assert tiny["tokens_per_s_est"] == pytest.approx(7.4491, rel=1e-3)
 
     emb = cand(out, "test/embed-110m")
     assert emb["quant"]["name"] == "F16"       # maior quant viável, não a mais rápida
@@ -293,8 +294,9 @@ def test_profile2_rtx3060(systems, catalog):
     # 7_650_000_000 + 1_073_741_824 + 563_840_000 = 9_287_581_824 <= 0.8 * 11.8e9 = 9.44e9
     assert d["total_bytes"] == 9_287_581_824 and d["tier"] == "confortavel"
     assert d["skipped_quants"] == []
-    # 7.65e9 / (360e9 * 0.75) = 0.0283333 s -> 35.2941 tok/s
-    assert d["tokens_per_s_est"] == pytest.approx(35.2941, rel=1e-3)
+    # KV na posição 7680: 2*32*8*128*7680*2 = 1_006_632_960
+    # (7.65e9 + 1_006_632_960) / (360e9 * 0.75) = 0.0320616 s -> 31.1900 tok/s
+    assert d["tokens_per_s_est"] == pytest.approx(31.1900, rel=1e-3)
 
     # MoE: Q6_K (24.6e9) não cabe em nenhum placement; Q4_K_M híbrido com 25 camadas na GPU
     m = cand(out, "test/moe-30b-a3b")
@@ -307,8 +309,10 @@ def test_profile2_rtx3060(systems, catalog):
     # cpu: 18.3e9 - 9_531_250_000 = 8_768_750_000 <= 0.8 * 14_179_869_184
     assert (h["weights_bytes"], h["total_bytes"], h["tier"]) == (8_768_750_000, 8_768_750_000, "confortavel")
     assert m["tier"] == "limite"           # pior dos dois pools (A18)
-    # MoE: só a fração ativa é lida por token => 31.1777 tok/s (usar params_total daria ~3,1)
-    assert m["tokens_per_s_est"] == pytest.approx(31.1777, rel=1e-3)
+    # MoE: só a fração ativa dos PESOS é lida (38_125_000/camada); KV inteiro, 2*48*4*128*7680*2 =
+    # 754_974_720 (15_728_640/camada), lido onde a camada está:
+    # (25*53_853_640)/(360e9*0.75) + (23*53_853_640)/(51.2e9*0.6) -> 22.0719 tok/s
+    assert m["tokens_per_s_est"] == pytest.approx(22.0719, rel=1e-3)
 
     assert ids(out["candidates"]) == {"test/tiny-1b", "test/dense-7b", "test/moe-30b-a3b", "test/embed-110m"}
     assert cand(out, "test/tiny-1b")["placement"] == "gpu_full"
@@ -326,13 +330,13 @@ def test_profile3_ddr5_moe_viable(systems, catalog):
     assert m["placement"] == "cpu_only" and m["n_gpu_layers"] == 0 and m["tier"] == "confortavel"
     # 24.6e9 + 805_306_368 + 563_840_000 = 25_969_146_368 <= 0.8 * 65_719_476_736
     assert m["total_bytes"] == 25_969_146_368
-    # bytes ativos por camada 51_250_000: t = 2_460_000_000/(89.6e9*0.6) -> 21.8537 tok/s
-    assert m["tokens_per_s_est"] == pytest.approx(21.8537, rel=1e-3)
+    # bytes ativos por camada 51_250_000 + KV 754_974_720: t = 3_214_974_720/(89.6e9*0.6) -> 16.7217 tok/s
+    assert m["tokens_per_s_est"] == pytest.approx(16.7217, rel=1e-3)
     assert m["n_threads"] == 16
     d = cand(out, "test/dense-7b")
-    # denso Q8_0: 7.65e9/(89.6e9*0.6) = 0.14230 s -> 7.0275 tok/s
-    assert d["quant"]["name"] == "Q8_0" and d["tokens_per_s_est"] == pytest.approx(7.0275, rel=1e-3)
-    # o MoE de 30B com 3B ativas é ~3x mais rápido que o denso de 7B: prova de que a fração ativa entra
+    # denso Q8_0: (7.65e9 + 1_006_632_960)/(89.6e9*0.6) = 0.16102 s -> 6.2103 tok/s
+    assert d["quant"]["name"] == "Q8_0" and d["tokens_per_s_est"] == pytest.approx(6.2103, rel=1e-3)
+    # o MoE de 30B com 3B ativas é bem mais rápido que o denso de 7B: prova de que a fração ativa entra
     assert m["tokens_per_s_est"] > 2.5 * d["tokens_per_s_est"]
 
 
@@ -364,7 +368,7 @@ def test_profile5_rx7800xt_rocm(systems, catalog):
     assert pools["cpu"]["usable_bytes"] == 31_359_738_368          # 34_359_738_368 - 3e9
     d = cand(out, "test/dense-7b")
     assert d["placement"] == "gpu_full" and d["n_gpu_layers"] == 32 and d["quant"]["name"] == "Q8_0"
-    assert d["tokens_per_s_est"] == pytest.approx(61.1765, rel=1e-3)  # 7.65e9/(624e9*0.75)=0.016346 s
+    assert d["tokens_per_s_est"] == pytest.approx(54.0626, rel=1e-3)  # (7.65e9+1_006_632_960)/(624e9*0.75)
     # MoE Q6_K híbrido: floor(0.95*16e9)=15.2e9 - 805_306_368 - 563_840_000 = 13_830_853_632
     # 13_830_853_632 / 512_500_000 = 26.987 -> 26 (27 camadas pediriam 13_837_500_000)
     m = cand(out, "test/moe-30b-a3b")
@@ -372,8 +376,9 @@ def test_profile5_rx7800xt_rocm(systems, catalog):
     assert m["by_pool"][0]["weights_bytes"] == 26 * 512_500_000
     # gpu = 13_325_000_000 + 1_369_146_368 = 14_694_146_368 : > 0.8*16e9, <= 0.95*16e9 => limite
     assert m["by_pool"][0]["tier"] == "limite" and m["by_pool"][1]["tier"] == "confortavel"
-    # 26*51_250_000/(624e9*0.75) + 22*51_250_000/(96e9*0.6) = 0.0028472 + 0.0195747 -> 44.5993
-    assert m["tokens_per_s_est"] == pytest.approx(44.5993, rel=1e-3)
+    # por camada: 51_250_000 de pesos ativos + 15_728_640 de KV (posição 7680) = 66_978_640
+    # 26*66_978_640/(624e9*0.75) + 22*66_978_640/(96e9*0.6) -> 34.1260
+    assert m["tokens_per_s_est"] == pytest.approx(34.1260, rel=1e-3)
 
 
 def test_swap_is_only_a_warning(systems, catalog):
@@ -714,3 +719,33 @@ def test_candidates_cite_only_catalog_models_with_source_url(systems, catalog):
             assert row["model"]["id"] in ms
             assert row["model"]["source_url"] == ms[row["model"]["id"]]["source_url"]
             assert row["model"]["source_url"].startswith("https://")
+
+
+# ---- KV lido no decode previsto (decisão B: resposta de 1024 tokens no fim da janela)
+
+
+def test_larger_context_predicts_lower_decode(systems, catalog):
+    tps = [cand(run(systems["ddr5_64"], catalog, tasks=("chat",), ctx=ctx), "test/dense-7b")["tokens_per_s_est"]
+           for ctx in (512, 2048, 8192, 32768)]
+    assert tps == sorted(tps, reverse=True) and len(set(tps)) == 4
+    # ctx 2048 -> posição 1536: (7.65e9 + 2*32*8*128*1536*2 = 201_326_592) / (89.6e9*0.6) = 0.146043 s -> 6.8473
+    assert tps[1] == pytest.approx(6.8473, rel=1e-3)
+
+
+def test_q8_kv_reads_less_than_f16(systems, catalog):
+    f16 = cand(run(systems["ddr5_64"], catalog, tasks=("chat",), kv="f16"), "test/dense-7b")
+    q8 = cand(run(systems["ddr5_64"], catalog, tasks=("chat",), kv="q8_0"), "test/dense-7b")
+    assert q8["tokens_per_s_est"] > f16["tokens_per_s_est"]
+    # q8_0: KV na posição 7680 = 503_316_480 -> (7.65e9 + 503_316_480)/(89.6e9*0.6) -> 6.5937
+    assert q8["tokens_per_s_est"] == pytest.approx(6.5937, rel=1e-3)
+
+
+def test_decode_assumption_is_echoed_and_rendered(systems, catalog):
+    from scout.cli import render_markdown
+
+    out = run(systems["ddr5_64"], catalog, tasks=("chat",), ctx=8192)
+    assert out["inputs"]["decode"] == {"window_tokens": 8192, "answer_tokens": 1024, "position_tokens": 7680}
+    assert "tokens/s no fim de uma janela de 8192 tokens" in render_markdown(out)
+    small = run(systems["ddr5_64"], catalog, tasks=("chat",), ctx=600)
+    assert small["inputs"]["decode"]["position_tokens"] == 300
+    assert "resposta ocupando a janela inteira" in render_markdown(small)

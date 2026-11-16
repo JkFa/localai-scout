@@ -873,3 +873,33 @@ o decode dela é idêntico ao da rodada 2, limpa (7,95 nas duas).
 média de 19,9 e 146,8 (83,4) não descreve nenhum dos dois e faria o aviso `slow_prefill_cpu` citar um prefill quatro
 vezes otimista para o 4B.
 **Bug corrigido.** O bench não achava modelo criado com `ollama create x`, que o Ollama lista como `x:latest`.
+
+## 2026-11-16 — leitura do KV cache na fórmula de decode (calibration_schema_version 2)
+
+**Decisão (humano).** `bytes_por_token = pesos_ativos + 2 × n_layers × n_kv_heads × head_dim × (P + N/2) ×
+elem_bytes` (média da leitura do KV numa geração de N tokens a partir de P). O bench grava esse valor com P e N reais
+das rodadas usadas e KV suposto f16, o padrão do Ollama (`BENCH_KV_QUANT`, registrado em cada `measured.json` como
+`kv_quant_assumed`; se o Ollama rodar com `OLLAMA_KV_CACHE_TYPE` diferente, a banda calibrada sai deslocada). O plan
+prevê na posição p̄ = ctx − 512, ou seja, uma resposta de 1024 tokens terminando no limite da janela pedida (opção B,
+conservadora pela direção do erro; ctx < 1024 → ctx/2). A suposição aparece em `inputs.decode` e numa linha do
+markdown. Evolução registrada, não iniciada: mostrar também o tok/s no início da janela (opção C; muda schema e web).
+**Por que agora.** Parcela do KV no tráfego por token (KV f16, pesos ativos), calculada sobre `data/catalog.json`:
+nas condições do bench (P≈520, N=1024) é 1–6% nos modelos de 4B para cima e 15,6% no Qwen3-0.6B; perto do
+`ctx_max` é 28–88% (Qwen3-4B: 70%). A correção quase não mexe na calibração medida e muda muito a previsão de quem
+usa contexto longo.
+**Valores antigos e novos lado a lado (mesmas medições de 2026-11-15, sem medir de novo).** A banda subiu porque o
+numerador cresceu: é redefinição, não regressão.
+
+| | v1 (só pesos) | v2 (pesos + KV médio) |
+| --- | --- | --- |
+| bytes/token, Qwen3-4B Q4_K_M (P=524, N=1024) | 2 497 280 256 | 2 650 044 672 (+6,1%) |
+| bytes/token, Qwen3-0.6B Q8_0 (P=516, N=1024) | 639 446 668 | 757 345 932 (+18,4%) |
+| banda só do 4B (forma 1p) — a validada à mão | 19,86 GB/s (manual: 19,8) | 21,07 GB/s |
+| ajuste 1p com os dois modelos | 19,08 GB/s | 20,61 GB/s |
+| ajuste 2p: banda | 21,63 GB/s | 22,04 GB/s |
+| ajuste 2p: overhead | 10,3 ms/token | 5,5 ms/token |
+
+Quase metade do overhead da v1 era KV: o 0.6B lê proporcionalmente mais cache, e o ajuste só com pesos atribuía essa
+leitura a um custo fixo. Os 19,8 GB/s da medição manual correspondem a 21,07 GB/s na definição v2.
+**Consequência.** Calibrações v1 são descartadas (`calibration_schema_outdated`) e o bench precisa gravar de novo,
+ou a v1 ser recalculada a partir do `measured.json` como foi feito aqui.

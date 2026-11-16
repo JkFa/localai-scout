@@ -18,7 +18,7 @@
     },
     "inputs": {
       "type": "object",
-      "required": ["intent", "system", "catalog", "tuning", "calibration"],
+      "required": ["intent", "system", "catalog", "tuning", "calibration", "decode"],
       "additionalProperties": false,
       "allOf": [
         {"if": {"properties": {"calibration": {"properties": {"status": {"enum": ["used", "discarded"]}}}}, "required": ["calibration"]},
@@ -28,6 +28,10 @@
         "power": {"$ref": "calibration.schema.json#/$defs/power", "description": "Estado de energia ATUAL lido pela CLI; presente quando inputs.calibration.status é used ou discarded (calibration_store_spec.md §5)."},
         "calibration": {"$ref": "calibration.schema.json#/$defs/echo", "description": "Calibração local: origem, status, casamento campo a campo e entrada escolhida por pool. Nunca o caminho do arquivo."},
         "intent": {"$ref": "#/$defs/intent"},
+        "decode": {"type": "object", "description": "Suposição de posição do tokens/s previsto (PROMPT.md, Throughput): resposta de answer_tokens terminando no fim da janela de window_tokens (= intent.ctx); o KV é lido na posição média position_tokens = window − answer/2 (window < answer: window/2, para cima). Vale para todo tokens_per_s_est.",
+          "required": ["window_tokens", "answer_tokens", "position_tokens"], "additionalProperties": false,
+          "properties": {"window_tokens": {"type": "integer", "minimum": 1}, "answer_tokens": {"type": "integer", "minimum": 1},
+            "position_tokens": {"type": "integer", "minimum": 1}}},
         "system": {"$ref": "system.schema.json"},
         "catalog": {
           "type": "object",

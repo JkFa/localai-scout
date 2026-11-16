@@ -1,5 +1,5 @@
 {
-  "calibration_schema_version": 1,
+  "calibration_schema_version": 2,
   "kind": "calibration",
   "machine": {
     "cpu.cores_physical": 8,

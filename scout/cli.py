@@ -103,6 +103,13 @@ def render_markdown(f: dict) -> str:
     if not f["candidates"]:
         lines.append("Nenhum modelo cabe com a intenção pedida.")
     else:
+        dec = f["inputs"].get("decode")
+        if dec:
+            answer = (f"resposta de {dec['answer_tokens']} tokens terminando no limite do contexto"
+                      if dec["window_tokens"] >= dec["answer_tokens"] else "resposta ocupando a janela inteira")
+            lines += [f"tokens/s no fim de uma janela de {dec['window_tokens']} tokens: {answer}, KV "
+                      f"{intent['kv_quant']} lido até a posição média {dec['position_tokens']}. "
+                      "Conversas mais curtas geram mais rápido.", ""]
         lines += [
             "| modelo | quant | placement | camadas na GPU | memória total | tier | tokens/s | confiança | nota |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
