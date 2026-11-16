@@ -177,19 +177,36 @@ def min_bpw(params_total: int) -> float:
     return 2.6
 
 
-def n_gpu_layers(weights: int, n_layers: int, vram_usable: int, kv_gpu: int, buffer_gpu: int) -> int:
-    """Camadas na GPU no offload: floor((floor(0.95*vram_usable) - kv - buffer) / bytes_camada).
+def n_gpu_layers(weights: int, kv: int, n_layers: int, vram_usable: int, buffer_gpu: int) -> int:
+    """Camadas na GPU no offload (schemas/hybrid_kv_spec.md §2):
+    floor((floor(0.95*vram_usable) - buffer_gpu) / (weights//L + ceil(kv/L))), em [0, L].
 
-    O corte de 0,95 (DECISIONS.md Q6) evita que todo híbrido encha a VRAM a
-    100% e caia em inviavel. Limitado a [0, n_layers].
+    Cada camada na GPU leva os seus pesos E o seu KV (llama.cpp: KV no
+    dispositivo da camada). ceil(kv/L) garante kv*n//L <= n*ceil(kv/L), logo a
+    GPU nunca passa de `limite`. O corte de 0,95 (DECISIONS.md Q6) continua.
+    A assinatura mudou de propósito: kv (TOTAL) vem antes de n_layers.
     """
-    bytes_camada = weights // n_layers
-    if bytes_camada <= 0:
+    per_layer = weights // n_layers + -(-kv // n_layers)
+    if per_layer <= 0:
         return n_layers
-    free = limit_cap(vram_usable) - kv_gpu - buffer_gpu
+    free = limit_cap(vram_usable) - buffer_gpu
     if free <= 0:
         return 0
-    return max(0, min(free // bytes_camada, n_layers))
+    return max(0, min(free // per_layer, n_layers))
+
+
+def hybrid_split(weights: int, kv: int, buf: int, n_layers: int, n_gpu: int
+                 ) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Memória por pool no híbrido: ((pesos, kv, buffer) da GPU, (pesos, kv, buffer) da CPU).
+
+    kv_gpu = kv*n_gpu//L, a MESMA partição do throughput (cada camada lê o seu
+    KV no pool onde está); o resto inteiro vai para a CPU. Buffer de computação
+    nos DOIS pools (Q1(b) do humano: o llama.cpp reserva um por backend, sem
+    medição do lado CPU ainda; erra para o lado seguro).
+    """
+    w_gpu = weights // n_layers * n_gpu
+    kv_gpu = kv * n_gpu // n_layers
+    return (w_gpu, kv_gpu, buf), (weights - w_gpu, kv - kv_gpu, buf)
 
 
 def bytes_per_token(weights: int, params_active: int, params_total: int) -> int:

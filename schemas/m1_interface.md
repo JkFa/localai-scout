@@ -17,8 +17,10 @@ como adotados). Formato de dados: `schemas/*.schema.json`.
   nessa ordem em float. Testes aceitam tolerância de ±1 byte só aqui.
 - `bytes_camada = weights // n_layers`.
 - Pool unificado (`unified_memory: true`): `budget = ram_total // 2`, um pool só.
-- `n_gpu = floor((floor(0.95 * vram_usable) - kv_gpu - buffer_gpu) / bytes_camada)`,
-  limitado a `[0, n_layers]`. No híbrido, KV inteiro e buffer ficam no lado GPU.
+- `n_gpu = floor((floor(0.95 * vram_usable) - buffer_gpu) / (bytes_camada + ceil(kv / n_layers)))`,
+  limitado a `[0, n_layers]`. No híbrido, cada camada leva o seu KV ao pool onde
+  está: `kv_gpu = kv * n_gpu // n_layers`, `kv_cpu = kv - kv_gpu`; o buffer de
+  computação entra nos dois pools (`schemas/hybrid_kv_spec.md`).
 - Banda desconhecida (`null`) → `tokens_per_s_est = None`. `ttft_s_est = None`
   (A17). Ordenação: tier, depois tokens/s desc com `None` por último, depois
   `model_id` asc como desempate final.
@@ -38,8 +40,10 @@ como adotados). Formato de dados: `schemas/*.schema.json`.
     buffer_bytes(ctx: int) -> int
     tier(total: int, budget: int) -> str            # "confortavel"|"limite"|"inviavel"
     min_bpw(params_total: int) -> float             # piso de qualidade
-    n_gpu_layers(weights: int, n_layers: int, vram_usable: int,
-                 kv_gpu: int, buffer_gpu: int) -> int
+    n_gpu_layers(weights: int, kv: int, n_layers: int, vram_usable: int,
+                 buffer_gpu: int) -> int                # kv = KV TOTAL; ceil(kv/L) por camada
+    hybrid_split(weights: int, kv: int, buf: int, n_layers: int, n_gpu: int)
+        -> ((w_gpu, kv_gpu, buf), (w_cpu, kv_cpu, buf))
     bytes_per_token(weights: int, params_active: int, params_total: int) -> int
                                                     # weights * active // total
     tokens_per_s(bytes_camada: int, n_layers: int, n_gpu: int,

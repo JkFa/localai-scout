@@ -166,37 +166,59 @@ def test_min_bpw_is_monotonic_non_increasing():
 
 # ---------------------------------------------------------------- n_gpu_layers
 def test_n_gpu_layers_hybrid_moe_case():
-    # weights 18.3e9, 48 camadas -> bytes_camada = 381_250_000
-    # floor(0.95 * 11_800_000_000) = 11_210_000_000
-    # 11_210_000_000 - kv 805_306_368 - buffer 563_840_000 = 9_840_853_632
-    # 9_840_853_632 / 381_250_000 = 25.81 -> 25
-    assert E.n_gpu_layers(18_300_000_000, 48, 11_800_000_000, 805_306_368, 563_840_000) == 25
+    # weights 18.3e9, 48 camadas -> bytes_camada = 381_250_000 ; ceil(805_306_368/48) = 16_777_216
+    # floor(0.95 * 11_800_000_000) = 11_210_000_000 ; - buffer 563_840_000 = 10_646_160_000
+    # 10_646_160_000 // (381_250_000 + 16_777_216 = 398_027_216) = 26.75 -> 26
+    assert E.n_gpu_layers(18_300_000_000, 805_306_368, 48, 11_800_000_000, 563_840_000) == 26
 
 
 def test_n_gpu_layers_capped_at_n_layers():
-    # 7B Q8_0: (11_210_000_000 - 1_073_741_824 - 563_840_000) / 239_062_500 = 40.04 -> limitado a 32
-    assert E.n_gpu_layers(7_650_000_000, 32, 11_800_000_000, 1_073_741_824, 563_840_000) == 32
+    # 7B Q8_0: (11_210_000_000 - 563_840_000) // (239_062_500 + 33_554_432) = 39.05 -> limitado a 32
+    assert E.n_gpu_layers(7_650_000_000, 1_073_741_824, 32, 11_800_000_000, 563_840_000) == 32
 
 
 def test_n_gpu_layers_floor_at_zero():
-    # 1_000_000_000*0.95 - 805_306_368 - 563_840_000 < 0 -> 0 (nunca negativo)
-    assert E.n_gpu_layers(18_300_000_000, 48, 1_000_000_000, 805_306_368, 563_840_000) == 0
-    assert E.n_gpu_layers(18_300_000_000, 48, 0, 0, 0) == 0
+    # floor(0.95*1e9) = 950_000_000 - buffer 1_000_000_000 < 0 -> 0 (nunca negativo)
+    assert E.n_gpu_layers(18_300_000_000, 805_306_368, 48, 1_000_000_000, 1_000_000_000) == 0
+    assert E.n_gpu_layers(18_300_000_000, 0, 48, 0, 0) == 0
+    # o KV não sai mais inteiro do orçamento: 950_000_000 // 398_027_216 = 2 camadas
+    assert E.n_gpu_layers(18_300_000_000, 805_306_368, 48, 1_000_000_000, 0) == 2
 
 
 def test_n_gpu_layers_ceiling_095_is_applied():
     # weights 4000 / 40 camadas = 100 B/camada; vram_usable 2000.
     # com teto 0,95: floor(1900)/100 = 19 ; sem teto seriam 20.
-    assert E.n_gpu_layers(4000, 40, 2000, 0, 0) == 19
-    # kv 1 byte: (1900 - 1) / 100 = 18.99 -> 18
-    assert E.n_gpu_layers(4000, 40, 2000, 1, 0) == 18
-    # kv 100 + buffer 50: (1900 - 150)/100 = 17.5 -> 17
-    assert E.n_gpu_layers(4000, 40, 2000, 100, 50) == 17
+    assert E.n_gpu_layers(4000, 0, 40, 2000, 0) == 19
+    # kv 1 byte: ceil(1/40) = 1 B/camada -> 1900 // 101 = 18
+    assert E.n_gpu_layers(4000, 1, 40, 2000, 0) == 18
+    # kv 400 (10/camada) + buffer 50: (1900 - 50) // 110 = 16.8 -> 16
+    assert E.n_gpu_layers(4000, 400, 40, 2000, 50) == 16
 
 
 def test_n_gpu_layers_uses_floor_division_bytes_per_layer():
     # weights 4099 // 40 = 102 B/camada: 1900 // 102 = 18 (18*102=1836 ; 19*102=1938 > 1900)
-    assert E.n_gpu_layers(4099, 40, 2000, 0, 0) == 18
+    assert E.n_gpu_layers(4099, 0, 40, 2000, 0) == 18
+
+
+def test_n_gpu_layers_gpu_side_never_exceeds_limit():
+    # ceil(kv/L) por camada garante w_gpu + kv*n//L + buf <= floor(0.95*vram) (hybrid_kv_spec.md §2)
+    for weights, kv, L, vram, buf in [(18_300_000_000, 805_306_368, 48, 11_800_000_000, 563_840_000),
+                                      (4099, 401, 40, 2000, 37), (7_650_000_000, 4_294_967_296, 32, 9e9 // 1, 1_219_360_000)]:
+        vram = int(vram)
+        n = E.n_gpu_layers(weights, kv, L, vram, buf)
+        (wg, kg, bg), (wc, kc, bc) = E.hybrid_split(weights, kv, buf, L, n)
+        assert wg + kg + bg <= E.limit_cap(vram)
+        assert (wg + wc, kg + kc, bg, bc) == (weights, kv, buf, buf)
+
+
+def test_hybrid_split_moe_rtx3060_hand_computed():
+    # hybrid_kv_spec.md §5.2: n_gpu 26 de 48, kv 805_306_368, buffer 563_840_000
+    # kv_gpu = 805_306_368*26//48 = 436_207_616 ; kv_cpu = 369_098_752
+    # pesos: 26*381_250_000 = 9_912_500_000 ; cpu 18_300_000_000 - 9_912_500_000 = 8_387_500_000
+    g, c = E.hybrid_split(18_300_000_000, 805_306_368, 563_840_000, 48, 26)
+    assert g == (9_912_500_000, 436_207_616, 563_840_000) and sum(g) == 10_912_547_616
+    assert c == (8_387_500_000, 369_098_752, 563_840_000)
+    assert sum(c) - 563_840_000 == 8_756_598_752
 
 
 # ---------------------------------------------------------------- MoE e throughput

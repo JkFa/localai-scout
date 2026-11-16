@@ -121,7 +121,8 @@ def check_candidates(out, system, catalog, intent_kw):
             assert only_emb and c.get("ctx_effective") == m["ctx_max"]
         assert c.get("ctx_effective", eff) == eff
         assert c["kv_bytes"] == kv_of(m, eff, kv, batch)
-        assert c["buffer_bytes"] == buf_of(eff)
+        # híbrido: buffer de computação nos dois pools (hybrid_kv_spec.md Q1(b))
+        assert c["buffer_bytes"] == buf_of(eff) * (2 if c["placement"] == "hybrid" else 1)
         assert c["total_bytes"] == c["weights_bytes"] + c["kv_bytes"] + c["buffer_bytes"]
         assert c["n_threads"] == perf  # nunca os núcleos lógicos
         assert c["tier"] != "inviavel"
@@ -136,6 +137,8 @@ def check_candidates(out, system, catalog, intent_kw):
             assert p["total_bytes"] == p["weights_bytes"] + p["kv_bytes"] + p["buffer_bytes"]
         assert sum(p["total_bytes"] for p in c["by_pool"]) == c["total_bytes"]
         assert sum(p["weights_bytes"] for p in c["by_pool"]) == c["weights_bytes"]
+        assert sum(p["kv_bytes"] for p in c["by_pool"]) == c["kv_bytes"]
+        assert sum(p["buffer_bytes"] for p in c["by_pool"]) == c["buffer_bytes"]
         # piso de qualidade
         assert q["bpw"] >= floor_of(m["params_total"])
         if m["params_total"] <= 3_000_000_000:
@@ -166,13 +169,16 @@ def check_candidates(out, system, catalog, intent_kw):
             assert 0 < c["n_gpu_layers"] < m["n_layers"]
             g, h = c["by_pool"]
             assert (g["pool"], h["pool"]) == ("gpu", "cpu")
-            # n_gpu = floor((floor(0.95*vram_usable) - kv - buffer) / bytes_camada)
-            exp = (95 * pools["gpu"]["usable_bytes"] // 100 - c["kv_bytes"] - c["buffer_bytes"]) // bytes_camada
-            assert c["n_gpu_layers"] == min(exp, m["n_layers"])
-            assert g["weights_bytes"] == c["n_gpu_layers"] * bytes_camada
-            # KV inteiro e buffer ficam do lado GPU (A18)
-            assert (g["kv_bytes"], g["buffer_bytes"]) == (c["kv_bytes"], c["buffer_bytes"])
-            assert (h["kv_bytes"], h["buffer_bytes"]) == (0, 0)
+            # n_gpu = floor((floor(0.95*vram_usable) - buffer) / (bytes_camada + ceil(kv/L)))  (hybrid_kv_spec §2)
+            L, n, b = m["n_layers"], c["n_gpu_layers"], buf_of(eff)
+            per_layer = bytes_camada + -(-c["kv_bytes"] // L)
+            exp = (95 * pools["gpu"]["usable_bytes"] // 100 - b) // per_layer
+            assert n == min(exp, L)
+            assert g["weights_bytes"] == n * bytes_camada
+            # cada camada leva o seu KV: a MESMA partição n/L do throughput (seg_bytes)
+            assert g["kv_bytes"] == c["kv_bytes"] * n // L and h["kv_bytes"] == c["kv_bytes"] - g["kv_bytes"]
+            assert g["buffer_bytes"] == h["buffer_bytes"] == b
+            assert g["total_bytes"] <= 95 * pools["gpu"]["usable_bytes"] // 100
 
 
 # ---------------------------------------------------------------- schema + invariantes em todos os perfis
@@ -298,21 +304,27 @@ def test_profile2_rtx3060(systems, catalog):
     # (7.65e9 + 1_006_632_960) / (360e9 * 0.75) = 0.0320616 s -> 31.1900 tok/s
     assert d["tokens_per_s_est"] == pytest.approx(31.1900, rel=1e-3)
 
-    # MoE: Q6_K (24.6e9) não cabe em nenhum placement; Q4_K_M híbrido com 25 camadas na GPU
+    # MoE: Q6_K (24.6e9) não cabe em nenhum placement; Q4_K_M híbrido.
+    # n_gpu = (11_210_000_000 - 563_840_000) // (381_250_000 + ceil(805_306_368/48) = 16_777_216)
+    #       = 10_646_160_000 // 398_027_216 = 26   (hybrid_kv_spec.md §5.1; antes 25)
     m = cand(out, "test/moe-30b-a3b")
-    assert m["quant"]["name"] == "Q4_K_M" and m["placement"] == "hybrid" and m["n_gpu_layers"] == 25
+    assert m["quant"]["name"] == "Q4_K_M" and m["placement"] == "hybrid" and m["n_gpu_layers"] == 26
     assert m["skipped_quants"] == [{"format": "GGUF", "name": "Q6_K", "reason_code": "does_not_fit"}]
     g, h = m["by_pool"]
-    # gpu: 25 * 381_250_000 = 9_531_250_000 ; + kv 805_306_368 + buffer 563_840_000 = 10_900_396_368
-    assert (g["weights_bytes"], g["total_bytes"]) == (9_531_250_000, 10_900_396_368)
-    assert g["tier"] == "limite"           # > 0.8*11.8e9 mas <= 0.95*11.8e9 = 11.21e9 (Q6: offload sai "limite")
-    # cpu: 18.3e9 - 9_531_250_000 = 8_768_750_000 <= 0.8 * 14_179_869_184
-    assert (h["weights_bytes"], h["total_bytes"], h["tier"]) == (8_768_750_000, 8_768_750_000, "confortavel")
+    # gpu: 26*381_250_000 = 9_912_500_000 ; kv 805_306_368*26//48 = 436_207_616 ; + buffer 563_840_000
+    #      = 10_912_547_616  (> 0.8*11.8e9, <= 0.95*11.8e9 = 11.21e9: limite)
+    assert (g["weights_bytes"], g["kv_bytes"], g["buffer_bytes"], g["total_bytes"]) == (
+        9_912_500_000, 436_207_616, 563_840_000, 10_912_547_616)
+    assert g["tier"] == "limite"
+    # cpu: 8_387_500_000 + kv 369_098_752 + buffer 563_840_000 (Q1(b)) = 9_320_438_752 <= 0.8*14_179_869_184
+    assert (h["weights_bytes"], h["kv_bytes"], h["buffer_bytes"], h["total_bytes"], h["tier"]) == (
+        8_387_500_000, 369_098_752, 563_840_000, 9_320_438_752, "confortavel")
+    assert m["buffer_bytes"] == 2 * 563_840_000 and m["total_bytes"] == 10_912_547_616 + 9_320_438_752
     assert m["tier"] == "limite"           # pior dos dois pools (A18)
     # MoE: só a fração ativa dos PESOS é lida (38_125_000/camada); KV inteiro, 2*48*4*128*7680*2 =
     # 754_974_720 (15_728_640/camada), lido onde a camada está:
-    # (25*53_853_640)/(360e9*0.75) + (23*53_853_640)/(51.2e9*0.6) -> 22.0719 tok/s
-    assert m["tokens_per_s_est"] == pytest.approx(22.0719, rel=1e-3)
+    # (26*53_853_640)/(360e9*0.75) + (22*53_853_640)/(51.2e9*0.6) -> 22.8556 tok/s
+    assert m["tokens_per_s_est"] == pytest.approx(22.8556, rel=1e-3)
 
     assert ids(out["candidates"]) == {"test/tiny-1b", "test/dense-7b", "test/moe-30b-a3b", "test/embed-110m"}
     assert cand(out, "test/tiny-1b")["placement"] == "gpu_full"
@@ -369,16 +381,18 @@ def test_profile5_rx7800xt_rocm(systems, catalog):
     d = cand(out, "test/dense-7b")
     assert d["placement"] == "gpu_full" and d["n_gpu_layers"] == 32 and d["quant"]["name"] == "Q8_0"
     assert d["tokens_per_s_est"] == pytest.approx(54.0626, rel=1e-3)  # (7.65e9+1_006_632_960)/(624e9*0.75)
-    # MoE Q6_K híbrido: floor(0.95*16e9)=15.2e9 - 805_306_368 - 563_840_000 = 13_830_853_632
-    # 13_830_853_632 / 512_500_000 = 26.987 -> 26 (27 camadas pediriam 13_837_500_000)
+    # MoE Q6_K híbrido: (floor(0.95*16e9) = 15.2e9 - 563_840_000) = 14_636_160_000
+    # // (512_500_000 + ceil(805_306_368/48) = 16_777_216) = 14_636_160_000 // 529_277_216 = 27 (antes 26)
     m = cand(out, "test/moe-30b-a3b")
-    assert m["quant"]["name"] == "Q6_K" and m["placement"] == "hybrid" and m["n_gpu_layers"] == 26
-    assert m["by_pool"][0]["weights_bytes"] == 26 * 512_500_000
-    # gpu = 13_325_000_000 + 1_369_146_368 = 14_694_146_368 : > 0.8*16e9, <= 0.95*16e9 => limite
+    assert m["quant"]["name"] == "Q6_K" and m["placement"] == "hybrid" and m["n_gpu_layers"] == 27
+    assert m["by_pool"][0]["weights_bytes"] == 27 * 512_500_000
+    # gpu = 13_837_500_000 + 805_306_368*27//48 (452_984_832) + 563_840_000 = 14_854_324_832:
+    # > 0.8*16e9, <= 0.95*16e9 => limite
+    assert m["by_pool"][0]["total_bytes"] == 14_854_324_832
     assert m["by_pool"][0]["tier"] == "limite" and m["by_pool"][1]["tier"] == "confortavel"
     # por camada: 51_250_000 de pesos ativos + 15_728_640 de KV (posição 7680) = 66_978_640
-    # 26*66_978_640/(624e9*0.75) + 22*66_978_640/(96e9*0.6) -> 34.1260
-    assert m["tokens_per_s_est"] == pytest.approx(34.1260, rel=1e-3)
+    # 27*66_978_640/(624e9*0.75) + 21*66_978_640/(96e9*0.6) -> 35.3564
+    assert m["tokens_per_s_est"] == pytest.approx(35.3564, rel=1e-3)
 
 
 def test_swap_is_only_a_warning(systems, catalog):
@@ -561,8 +575,9 @@ def test_stops_at_largest_viable_quant(systems, catalog):
     d = cand(out2, "test/dense-7b")
     # Q8_0 gpu_full: 9_287_581_824 > 0.95*9e9 = 8.55e9 ; híbrido Q8_0: gpu 0.95*9e9 -> poucas camadas,
     # cpu pool suficiente => Q8_0 ainda viável em híbrido (mantém a maior quant)
-    # n_gpu = floor((8_550_000_000 - 1_073_741_824 - 563_840_000) / 239_062_500) = floor(28.91) = 28
-    assert d["quant"]["name"] == "Q8_0" and d["placement"] == "hybrid" and d["n_gpu_layers"] == 28
+    # n_gpu = (8_550_000_000 - 563_840_000) // (239_062_500 + 1_073_741_824/32 = 33_554_432)
+    #       = 7_986_160_000 // 272_616_932 = 29  (antes 28)
+    assert d["quant"]["name"] == "Q8_0" and d["placement"] == "hybrid" and d["n_gpu_layers"] == 29
     check_candidates(out2, s, catalog, {})
 
 
@@ -816,12 +831,12 @@ def test_start_never_orders_nor_picks_primary(systems, catalog):
 def test_start_hybrid_moe_same_placement_hand_computed(systems, catalog):
     out = run(systems["rtx3060"], catalog)
     m = cand(out, "test/moe-30b-a3b")
-    assert m["placement"] == "hybrid" and m["n_gpu_layers"] == 25  # placement escolhido pelo fim
+    assert m["placement"] == "hybrid" and m["n_gpu_layers"] == 26  # placement escolhido pelo fim
     # início: KV na posição 512 = 2*48*4*128*512*2 = 50_331_648, dividido pelas camadas de cada trecho
-    # gpu: 25*38_125_000 + 50_331_648*25//48 (26_214_400) = 979_339_400 / (360e9*0.75)
-    # cpu: 23*38_125_000 + 50_331_648*23//48 (24_117_248) = 900_992_248 / (51.2e9*0.6)
-    # t = 0.0036272 + 0.0293292 = 0.0329564 s -> 30.3432 tok/s (fim: 22.0719)
-    assert m["tokens_per_s_est_start"] == pytest.approx(30.3432, rel=1e-3)
+    # gpu: 26*38_125_000 + 50_331_648*26//48 (27_262_976) = 1_018_512_976 / (360e9*0.75)
+    # cpu: 22*38_125_000 + 50_331_648*22//48 (23_068_672) = 861_818_672 / (51.2e9*0.6)
+    # t = 0.0037723 + 0.0280540 = 0.0318263 s -> 31.4206 tok/s (fim: 22.8556)
+    assert m["tokens_per_s_est_start"] == pytest.approx(31.4206, rel=1e-3)
     assert m["tokens_per_s_est_start"] > m["tokens_per_s_est"]
 
 
@@ -871,3 +886,49 @@ def test_new_sentence_only_when_some_start_line_is_shown(systems, catalog, ctx, 
     assert bool(rows) is shown
     assert ("Esse é o número que ordena" in md) is shown
     assert ("Conversas mais curtas geram mais rápido." in md) is not shown
+
+
+# ---- KV do híbrido por camada na memória (schemas/hybrid_kv_spec.md)
+
+
+def test_hybrid_ram_side_now_holds_kv_and_buffer_so_quant_drops(systems, catalog):
+    """§5.3: rtx3060 com ram_total 15_100_000_000 (orçamento 12_100_000_000, limit_cap 11_495_000_000),
+    chat, ctx 32768, f16, MoE. kv = 2*48*4*128*32768*2 = 3_221_225_472 ; buffer = 400e6 + 20e3*32768 = 1_055_360_000.
+    Q4_K_M: n_gpu = (11_210_000_000 - 1_055_360_000) // (381_250_000 + 67_108_864) = 22;
+      kv_cpu = 3_221_225_472 - 3_221_225_472*22//48 = 1_744_830_464;
+      CPU = 18_300_000_000 - 22*381_250_000 (9_912_500_000) + 1_744_830_464 + 1_055_360_000 = 12_712_690_464
+      > 11_495_000_000 -> inviavel (com buffer zero na CPU, 11_657_330_464: inviavel também).
+    Q3_K_M (14_900_000_000 / 48 = 310_416_666): n_gpu = 10_154_640_000 // 377_525_530 = 26;
+      GPU = 26*310_416_666 + 3_221_225_472*26//48 + 1_055_360_000 = 8_070_833_316 + 1_744_830_464 + 1_055_360_000
+          = 10_871_023_780 (limite); CPU = 14_900_000_000 - 8_070_833_316 + 1_476_395_008 + 1_055_360_000
+          = 9_360_921_692 (<= 0.8*12.1e9 = 9.68e9: confortavel)."""
+    s = deep(systems["rtx3060"])
+    s["memory"]["ram_total_bytes"]["value"] = 15_100_000_000
+    out = run(s, catalog, tasks=("chat",), ctx=32768)
+    assert_valid("feasibility.schema.json", out)
+    m = cand(out, "test/moe-30b-a3b")
+    assert m["quant"]["name"] == "Q3_K_M" and m["placement"] == "hybrid" and m["n_gpu_layers"] == 26
+    assert {"format": "GGUF", "name": "Q4_K_M", "reason_code": "does_not_fit"} in m["skipped_quants"]
+    g, h = m["by_pool"]
+    assert (g["total_bytes"], g["tier"]) == (10_871_023_780, "limite")
+    assert (h["kv_bytes"], h["buffer_bytes"], h["total_bytes"], h["tier"]) == (
+        1_476_395_008, 1_055_360_000, 9_360_921_692, "confortavel")
+    check_candidates(out, s, catalog, {"ctx": 32768, "tasks": ("chat",)})
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+@pytest.mark.parametrize("ctx", [512, 2048, 8192, 32768])
+@pytest.mark.parametrize("kv", ["f16", "q8_0"])
+def test_hybrid_memory_and_throughput_share_the_layer_partition(systems, catalog, profile, ctx, kv):
+    """§5.4: somas por pool batem com o candidato, a GPU do híbrido fica <= limit_cap e o KV da GPU é
+    kv*n_gpu//L, a mesma fração n/L que o throughput usa (seg_bytes)."""
+    out = run(systems[profile], catalog, ctx=ctx, kv=kv)
+    assert_valid("feasibility.schema.json", out)
+    usable = {p["id"]: p["usable_bytes"] for p in out["pools"]}
+    for c in out["candidates"]:
+        assert sum(u["kv_bytes"] for u in c["by_pool"]) == c["kv_bytes"]
+        assert sum(u["total_bytes"] for u in c["by_pool"]) == c["total_bytes"]
+        if c["placement"] == "hybrid":
+            g = c["by_pool"][0]
+            assert g["pool"] == "gpu" and g["total_bytes"] <= 95 * usable["gpu"] // 100
+            assert g["kv_bytes"] == c["kv_bytes"] * c["n_gpu_layers"] // c["model"]["n_layers"]

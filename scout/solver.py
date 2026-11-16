@@ -358,7 +358,6 @@ def _attempts(
     out: list[Attempt] = []
     gpu = pools.get("gpu") or pools.get("unified")
     cpu = pools.get("cpu")
-    bytes_camada = weights // n_layers
 
     def segments(n_gpu: int) -> list[tuple[Pool | None, int]]:
         return [(p, n) for p, n in ((gpu, n_gpu), (cpu, n_layers - n_gpu)) if n > 0]
@@ -383,7 +382,7 @@ def _attempts(
 
     def make(placement: str, n_gpu: int, usages: tuple[dict[str, Any], ...], used: tuple[Pool, ...]) -> Attempt:
         segs = [p for p, _ in segments(n_gpu) if p is not None]
-        return Attempt(placement, n_gpu, usages, weights + kv + buf, _worst_tier(usages),
+        return Attempt(placement, n_gpu, usages, sum(u["total_bytes"] for u in usages), _worst_tier(usages),
                        tps(n_gpu), used, _missing(usages),
                        seg_bytes(n_layers - n_gpu), seg_bytes(n_layers),
                        tuple(p.id for p in segs if p.cal), tuple(p.id for p in segs if not p.cal),
@@ -396,12 +395,14 @@ def _attempts(
     if fmt != "GGUF":
         return out  # EXL2/AWQ/GPTQ: só residência total na GPU
 
-    # hybrid: KV inteiro e buffer no lado GPU (m1_interface.md)
+    # hybrid: cada camada leva o seu KV ao pool onde está (kv*n//L, a mesma partição
+    # de seg_bytes no throughput); buffer de computação nos dois pools
+    # (schemas/hybrid_kv_spec.md; m1_interface.md)
     if allow_hybrid and gpu is not None and gpu.id == "gpu" and cpu is not None:
-        n_gpu = E.n_gpu_layers(weights, n_layers, gpu.usable, kv, buf)
+        n_gpu = E.n_gpu_layers(weights, kv, n_layers, gpu.usable, buf)
         if 1 <= n_gpu < n_layers:
-            w_gpu = bytes_camada * n_gpu
-            usages = (_usage(gpu, w_gpu, kv, buf), _usage(cpu, weights - w_gpu, 0, 0))
+            g, c = E.hybrid_split(weights, kv, buf, n_layers, n_gpu)
+            usages = (_usage(gpu, *g), _usage(cpu, *c))
             out.append(make("hybrid", n_gpu, usages, (gpu, cpu)))
 
     if cpu is not None:
@@ -643,7 +644,7 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
         "n_threads": n_threads,
         "weights_bytes": weights,
         "kv_bytes": kv,
-        "buffer_bytes": buf,
+        "buffer_bytes": sum(u["buffer_bytes"] for u in a.by_pool),  # híbrido: buffer nos dois pools
         "total_bytes": a.total,
         "by_pool": list(a.by_pool),
         "tier": a.tier,

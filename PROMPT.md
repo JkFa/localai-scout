@@ -141,13 +141,24 @@ Offload de camadas (só GGUF; EXL2, AWQ e GPTQ exigem residência total em GPU
 e devem ser rejeitados quando não couberem inteiros):
 
   bytes_camada = weights / n_layers
-  n_gpu = floor((floor(0.95 * vram_usable) - kv_gpu - buffer_gpu) / bytes_camada)
+  n_gpu = floor((floor(0.95 * vram_usable) - buffer_gpu)
+                / (bytes_camada + ceil(kv / n_layers)))
   n_gpu = max(0, min(n_gpu, n_layers))
 
 O teto de 0.95 é o mesmo corte do tier "limite": sem ele o offload encheria a
 VRAM a 100% e todo híbrido cairia em "inviavel" (DECISIONS.md, Q6). No
-híbrido, o KV inteiro e o buffer ficam no lado da GPU; o lado CPU leva as
-camadas restantes (weights - n_gpu * bytes_camada). O tier do híbrido é
+híbrido, cada camada leva o SEU KV ao pool onde está (llama.cpp: KV no
+dispositivo da camada), a mesma partição do throughput:
+
+  kv_gpu = kv * n_gpu // n_layers ;  kv_cpu = kv - kv_gpu
+  GPU = n_gpu * bytes_camada + kv_gpu + buffer
+  CPU = (weights - n_gpu * bytes_camada) + kv_cpu + buffer
+
+O buffer de computação entra nos DOIS pools (o llama.cpp reserva um por
+backend; sem medição do lado CPU, erra para o lado seguro), e o
+candidate.buffer_bytes do híbrido é a soma dos dois. O ceil(kv / n_layers) na
+fórmula de n_gpu garante que o lado GPU nunca passa de "limite"
+(schemas/hybrid_kv_spec.md). O tier do híbrido é
 calculado por pool, contra o orçamento de cada um, e vale o PIOR dos dois
 (DECISIONS.md A18). O placement hybrid só existe com 1 <= n_gpu < n_layers
 (schemas/feasibility.schema.json, candidate.n_gpu_layers).

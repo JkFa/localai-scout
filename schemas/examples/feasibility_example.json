@@ -459,35 +459,35 @@
         "file_bytes": 18300000000
       },
       "placement": "hybrid",
-      "n_gpu_layers": 25,
+      "n_gpu_layers": 26,
       "n_threads": 6,
       "weights_bytes": 18300000000,
       "kv_bytes": 805306368,
-      "buffer_bytes": 563840000,
-      "total_bytes": 19669146368,
+      "buffer_bytes": 1127680000,
+      "total_bytes": 20232986368,
       "by_pool": [
         {
           "pool": "gpu",
-          "weights_bytes": 9531250000,
-          "kv_bytes": 805306368,
+          "weights_bytes": 9912500000,
+          "kv_bytes": 436207616,
           "buffer_bytes": 563840000,
-          "total_bytes": 10900396368,
+          "total_bytes": 10912547616,
           "budget_bytes": 11800000000,
           "tier": "limite"
         },
         {
           "pool": "cpu",
-          "weights_bytes": 8768750000,
-          "kv_bytes": 0,
-          "buffer_bytes": 0,
-          "total_bytes": 8768750000,
+          "weights_bytes": 8387500000,
+          "kv_bytes": 369098752,
+          "buffer_bytes": 563840000,
+          "total_bytes": 9320438752,
           "budget_bytes": 14179869184,
           "tier": "confortavel"
         }
       ],
       "tier": "limite",
-      "tokens_per_s_est": 21.6,
-      "tokens_per_s_est_start": 29.69,
+      "tokens_per_s_est": 22.33,
+      "tokens_per_s_est_start": 30.69,
       "ttft_s_est": null,
       "confidence": "medium",
       "confidence_reasons": [

@@ -34,15 +34,15 @@ def squeezed_rtx(systems, gpu_bw=None, cpu_bw=51_200_000_000):
 
 def test_f4_unknown_gpu_bw_picks_least_cpu_bytes(systems, catalog):
     """hybrid (tokens None) e cpu_only (tokens conhecido) viáveis: vence o de MENOR bytes na CPU.
-    n_gpu = floor((8_550_000_000 - 1_073_741_824 - 563_840_000)/239_062_500) = 28
-    hybrid  : 4 camadas * 239_062_500 =   956_250_000 B/token na CPU
-    cpu_only: 32 camadas * 239_062_500 = 7_650_000_000 B/token na CPU"""
+    n_gpu = (8_550_000_000 - 563_840_000) // (239_062_500 + 33_554_432) = 29   (hybrid_kv_spec.md; antes 28)
+    hybrid  : 3 camadas * 239_062_500 =   717_187_500 B/token de pesos na CPU (+ o KV lido dessas 3)
+    cpu_only: 32 camadas * 239_062_500 = 7_650_000_000 B/token de pesos na CPU (+ todo o KV)"""
     out = go(squeezed_rtx(systems), catalog)
     d = cand(out, "test/dense-7b")
-    assert d["quant"]["name"] == "Q8_0" and d["placement"] == "hybrid" and d["n_gpu_layers"] == 28
+    assert d["quant"]["name"] == "Q8_0" and d["placement"] == "hybrid" and d["n_gpu_layers"] == 29
     assert d["tokens_per_s_est"] is None
     assert "ranked_by_bytes" in d["confidence_reasons"]
-    assert bytes_keys(d) == (956_250_000, 7_650_000_000)
+    assert bytes_keys(d) == (717_187_500, 7_650_000_000)
     assert_valid("feasibility.schema.json", out)
 
 
@@ -117,10 +117,10 @@ def test_fa_bpw_above_limit_not_hybrid(systems, catalog):
 
 def test_fa_limit_is_read_from_tuning(systems, catalog):
     # limiar 16.0: o F16 volta a ser híbrido. bytes_camada 450_000_000;
-    # n_gpu = floor((11_210_000_000 - 1_073_741_824 - 563_840_000)/450_000_000) = floor(21.27) = 21
+    # n_gpu = (11_210_000_000 - 563_840_000) // (450_000_000 + 33_554_432) = 10_646_160_000 // 483_554_432 = 22
     out = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning={**TUNING, "max_bpw_offload": 16.0})
     c = cand(out, "test/fat-7b")
-    assert c["quant"]["name"] == "F16" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 21
+    assert c["quant"]["name"] == "F16" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 22
     assert c["skipped_quants"] == []
     # limiar menor que 8.5 também age: 4.0 deixa Q8_0 sem hybrid (aqui ainda cabe em gpu_full)
     out2 = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning={**TUNING, "max_bpw_offload": 4.0})
@@ -134,14 +134,16 @@ def moe_q8(catalog):
 
 def test_fa_limit_boundary_is_inclusive(systems, catalog):
     """bpw 8.5 == limiar 8.5 NÃO é 'acima': hybrid avaliado. rx7800xt: Q8_0 31_875_000_000 só cabe híbrido;
-    bytes_camada 664_062_500; n_gpu = floor((15_200_000_000 - 1_369_146_368)/664_062_500) = floor(20.83) = 20."""
+    bytes_camada 664_062_500 + ceil(805_306_368/48) = 16_777_216 de KV;
+    n_gpu = (15_200_000_000 - 563_840_000) // 680_839_716 = 14_636_160_000 // 680_839_716 = 21 (antes 20)."""
     out = go(systems["rx7800xt"], catalog, [moe_q8(catalog)])
     c = cand(out, "test/moe-q8")
-    assert c["quant"]["name"] == "Q8_0" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 20
-    # limiar 8.4: Q8_0 (8.5 > 8.4) sem hybrid, não cabe nos outros => cai para Q6_K híbrido (26 camadas)
+    assert c["quant"]["name"] == "Q8_0" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 21
+    # limiar 8.4: Q8_0 (8.5 > 8.4) sem hybrid, não cabe nos outros => cai para Q6_K híbrido (27 camadas,
+    # 14_636_160_000 // (512_500_000 + 16_777_216))
     out2 = go(systems["rx7800xt"], catalog, [moe_q8(catalog)], tuning={**TUNING, "max_bpw_offload": 8.4})
     c2 = cand(out2, "test/moe-q8")
-    assert c2["quant"]["name"] == "Q6_K" and c2["placement"] == "hybrid" and c2["n_gpu_layers"] == 26
+    assert c2["quant"]["name"] == "Q6_K" and c2["placement"] == "hybrid" and c2["n_gpu_layers"] == 27
     assert c2["skipped_quants"] == [{"format": "GGUF", "name": "Q8_0", "reason_code": "bpw_above_offload_limit"}]
     assert_valid("feasibility.schema.json", out2)
 
@@ -220,7 +222,7 @@ def test_r3_no_note_without_limit_in_tuning(systems, catalog):
     tun = {k: v for k, v in TUNING.items() if k != "max_bpw_offload"}
     out = go(systems["rtx3060"], catalog, [fat_model(catalog)], tuning=tun)
     c = cand(out, "test/fat-7b")
-    assert c["quant"]["name"] == "F16" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 21
+    assert c["quant"]["name"] == "F16" and c["placement"] == "hybrid" and c["n_gpu_layers"] == 22
     assert notes(c) == []
 
 
@@ -305,12 +307,12 @@ def test_slow_prefill_cpu_warning(systems, catalog):
 
 def test_slow_prefill_cpu_hybrid_majority_on_cpu(systems, catalog):
     # VRAM usable 3e9 => 7B Q8_0 híbrido com poucas camadas na GPU:
-    # n_gpu = floor((2_850_000_000 - 1_073_741_824 - 563_840_000)/239_062_500) = 5 < 27 na CPU
+    # n_gpu = (2_850_000_000 - 563_840_000) // (239_062_500 + 33_554_432) = 8 < 24 na CPU
     s = deep(systems["rtx3060"])
     s["gpus"]["value"][0]["vram_free_bytes"]["value"] = 3_600_000_000      # usable = 3_000_000_000
     out = go(s, catalog, tasks=("chat",))
     d = cand(out, "test/dense-7b")
-    assert d["placement"] == "hybrid" and d["n_gpu_layers"] == 5
+    assert d["placement"] == "hybrid" and d["n_gpu_layers"] == 8
     assert "slow_prefill_cpu" in warn_codes(out)
 
 
