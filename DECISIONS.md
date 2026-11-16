@@ -933,3 +933,17 @@ evolução terá de seguir a mesma regra de tudo ou nada.
 **Roteamento.** `nucleo` (opus/medium) faz `estimate.py`, `solver.py`, o markdown em `cli.py`, os testes e o
 PROMPT.md. `web` (sonnet/medium) faz `render.js` e `app.js`. O markdown do plan fica com o `nucleo` porque já é
 dele (`render_markdown` foi mexido na opção B no mesmo commit do solver).
+
+## 2026-11-16 — perfil balanced na tomada: sem calibração própria
+
+**Decisão (humano, opção 3).** Nenhuma entrada de `balanced` foi instalada. Em `balanced`, o plan usa a entrada de
+`performance` (casamento de energia `other_state`), com a confiança um nível abaixo e a condição dita por extenso.
+**Evidência.** Qwen3-4B Q4_K_M, 1024 tokens, ctx 8192, na tomada, governor powersave / EPP balance_performance:
+7,90 tok/s (rodadas 7,94 e 7,87; 20,9 GB/s efetivos na definição v2), contra 7,95 tok/s em `performance`
+(governor performance / EPP performance). Diferença de ~1%: nesta máquina, na tomada, os dois perfis medem o mesmo.
+Uma medição anterior em `balanced` com os containers rodando deu 7,81 tok/s e banda 2p de 21,62 GB/s (−1,9%).
+**Medições descartadas.** No segundo bench em `balanced`, o Qwen3-0.6B não estabilizou em 6 rodadas (decode de 24,8
+caindo para 13,3 tok/s) porque Brave, WhatsApp e Firefox foram abertos durante a medição e o sistema passou a paginar
+(até 1,9 GB para o swap numa rodada). O bench marcou a calibração como instável e o ajuste 2p resultante (26,3 GB/s,
+25,8 ms) foi descartado. O caso mostra que o diagnóstico de condições e o critério de estabilização pegam a
+interferência sem intervenção humana.
