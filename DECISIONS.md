@@ -947,3 +947,34 @@ caindo para 13,3 tok/s) porque Brave, WhatsApp e Firefox foram abertos durante a
 (até 1,9 GB para o swap numa rodada). O bench marcou a calibração como instável e o ajuste 2p resultante (26,3 GB/s,
 25,8 ms) foi descartado. O caso mostra que o diagnóstico de condições e o critério de estabilização pegam a
 interferência sem intervenção humana.
+
+## 2026-11-16 — KV do híbrido por camada na memória (revê A18 e a fórmula de n_gpu do Q6)
+
+**Contexto.** O revisor apontou uma contradição no `PROMPT.md` (achado 3). A memória punha o KV inteiro e o buffer
+no lado GPU do híbrido (A18). O throughput, desde a opção B, lê o KV de cada camada no pool da camada. O efeito era
+superestimar a VRAM e subestimar a RAM: o tier da RAM podia sair otimista, que é a direção proibida.
+**Decisão (humano; enunciado em `schemas/hybrid_kv_spec.md`).** O modelo passa a ser por camada, o padrão do
+llama.cpp com offload parcial. Está conferido em `src/llama-kv-cache.cpp`: com `offload`, o buffer do KV da camada
+`il` é o de `model.dev_layer(il)`. As fórmulas:
+- `kv_gpu = kv·n_gpu // L` e `kv_cpu = kv − kv_gpu`, a mesma partição do `seg_bytes` do throughput;
+- `n_gpu = (limit_cap(vram) − buffer) // (weights//L + ⌈kv/L⌉)`, com o teto 0,95 mantido e a assinatura de
+  `n_gpu_layers` alterada de propósito.
+**O que muda no A18.** O tier continua sendo o pior dos dois pools. Muda a composição de cada lado. A GPU fica com
+as camadas dela (pesos + KV) e o buffer; a CPU, com as camadas dela (pesos + KV), mais o buffer se Q1 do enunciado
+for (b). O A18 supunha que o KV vivia com o buffer, e o llama.cpp aloca o KV com a camada.
+**Conferido nos fixtures (só funções puras).** O revisor estimou ~1,5 GB de KV fora da conta da RAM. Esse KV
+existe: são 1 744 830 464 B no MoE Q4_K_M com rtx3060 e ctx 32768. Mas `n_gpu` sobe de 18 para 22, e o efeito
+líquido na RAM é de +219 830 464 B sem buffer na CPU e +1 275 190 464 B com ele. Nenhum tier ou placement muda nos
+fixtures sem mutação; só `n_gpu` sobe (por exemplo, 25 → 26 no perfil padrão) e, com ele, o tokens/s do híbrido.
+Com a RAM reduzida a 15,1 GB, o Q4_K_M híbrido passa de `limite` a `inviavel` e o candidato cai para Q3_K_M.
+**Alternativas descartadas.**
+- Manter o KV inteiro na GPU e corrigir só o throughput: contraria o que o llama.cpp faz e desperdiça VRAM, que
+  vira menos camadas na GPU e tokens/s pessimista.
+- `kv//L` no custo da camada: pode passar do teto por arredondamento; `⌈kv/L⌉` não passa.
+**Em aberto.**
+- Q1: tamanho do buffer de computação no lado CPU. O llama.cpp reserva um por backend e não temos medição.
+  Recomendação: o mesmo buffer nos dois pools até medir.
+- Q2: o motor próprio do Ollama não foi conferido no código.
+**Consequência aceita.** Os números de offload dos testes e do exemplo mudam, e `PROMPT.md` §Offload,
+`m1_interface.md` e o exemplo são atualizados pelo `nucleo` (opus/medium) no commit da implementação. No exemplo,
+o híbrido vai para n_gpu 26, com tokens/s de 22,33 no fim e 30,69 no início.
