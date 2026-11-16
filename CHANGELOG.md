@@ -4,6 +4,17 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.2.2] - 2026-11-16
+
+### Alterado
+
+- Memória do híbrido: o KV de cada camada passa a ficar no pool onde a camada roda, como no llama.cpp com offload parcial, em vez de todo o KV na GPU. A RAM do híbrido passa a contar o KV das camadas na CPU, cada camada na GPU custa seus pesos e seu KV, e o buffer de computação conta nos dois pools (`buffer_bytes` do candidato é a soma). Com isso cabem igual ou mais camadas na GPU e o tok/s do híbrido sobe; com RAM apertada e contexto longo, o tier do lado CPU pode piorar e o plan escolher uma quantização menor.
+
+### Corrigido
+
+- A nota de leitura dos tokens/s só menciona a linha "no início de uma conversa" quando algum candidato realmente a mostra (markdown e frontend).
+- A checagem 1 do critério de pronto da calibração compara previsto e medido na mesma posição do KV (a do bench), em vez de comparar o fim da janela com a posição do bench.
+
 ## [0.2.1] - 2026-11-16
 
 ### Adicionado
