@@ -856,3 +856,18 @@ def test_markdown_of_020_shape_keeps_old_sentence(systems, catalog):
     md = render_markdown(out)
     assert "Conversas mais curtas geram mais rápido." in md
     assert "no início de uma conversa" not in md and "Esse é o número que ordena" not in md
+
+
+@pytest.mark.parametrize("ctx,shown", [(1025, False), (8192, True)])
+def test_new_sentence_only_when_some_start_line_is_shown(systems, catalog, ctx, shown):
+    """ctx 1025: posições 512 x 513, mas os textos de 2 casas coincidem em todo candidato (D7):
+    nenhuma linha de início, e a frase não pode anunciar uma linha que não existe."""
+    from scout.cli import render_markdown
+
+    out = run(systems["rtx3060"], catalog, ctx=ctx)
+    assert out["inputs"]["decode"]["start_position_tokens"] != out["inputs"]["decode"]["position_tokens"]
+    md = render_markdown(out)
+    rows = [ln for ln in md.splitlines() if ln.startswith("| [") and "no início de uma conversa:" in ln]
+    assert bool(rows) is shown
+    assert ("Esse é o número que ordena" in md) is shown
+    assert ("Conversas mais curtas geram mais rápido." in md) is not shown

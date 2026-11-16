@@ -73,6 +73,18 @@ def _warn(text: str, c: dict) -> str:
     return text + (" ⚠" if c["confidence"] == "low" else "")
 
 
+def _start_note(c: dict) -> str | None:
+    """Linha "no início de uma conversa", ou None quando não se exibe: valor null,
+    embeddings, ou texto formatado igual ao do principal (D7, decode_range_spec.md)."""
+    start = c.get("tokens_per_s_est_start")
+    if start is None or "decode_not_applicable" in c["confidence_reasons"]:
+        return None
+    s_txt = _fmt_tps(start, c["provenance"], "tokens_per_s_est_start")
+    if s_txt == _fmt_tps(c["tokens_per_s_est"], c["provenance"]):
+        return None
+    return "no início de uma conversa: " + _warn(s_txt, c) + " tokens/s"
+
+
 def render_markdown(f: dict) -> str:
     intent = f["inputs"]["intent"]
     lines: list[str] = ["# LocalAI Scout — plano", ""]
@@ -107,8 +119,8 @@ def render_markdown(f: dict) -> str:
         if dec:
             answer = (f"resposta de {dec['answer_tokens']} tokens terminando no limite do contexto"
                       if dec["window_tokens"] >= dec["answer_tokens"] else "resposta ocupando a janela inteira")
-            # Posições iguais (ctx <= 1024): nenhuma nota de início sai (D7), então a frase antiga fica.
-            if "start_position_tokens" in dec and dec["start_position_tokens"] != dec["position_tokens"]:
+            # A frase nova só quando ao menos um candidato exibe a linha de início (mesma regra D7).
+            if "start_position_tokens" in dec and any(_start_note(c) for c in f["candidates"]):
                 n_start = min(dec["answer_tokens"], dec["window_tokens"])
                 tail = ("Esse é o número que ordena e escolhe a recomendação. Na nota, \"no início de uma "
                         f"conversa\" é o de uma resposta de {n_start} tokens começando com o contexto vazio "
@@ -135,12 +147,9 @@ def render_markdown(f: dict) -> str:
                 notes.append("tokens/s pela calibração desta máquina (scout bench)")
             elif c.get("tokens_per_s_basis") == "mixed":
                 notes.append("tokens/s: um trecho calibrado, outro por eta")
-            start = c.get("tokens_per_s_est_start")
-            if start is not None and "decode_not_applicable" not in c["confidence_reasons"]:
-                s_txt = _fmt_tps(start, c["provenance"], "tokens_per_s_est_start")
-                # D7: some quando o texto formatado coincide com o do principal
-                if s_txt != _fmt_tps(c["tokens_per_s_est"], c["provenance"]):
-                    notes.append("no início de uma conversa: " + _warn(s_txt, c) + " tokens/s")
+            start_note = _start_note(c)
+            if start_note:
+                notes.append(start_note)
             if c["ttft_s_est"] is not None:
                 notes.append(f"tempo até o primeiro token: {c['ttft_s_est']:.2f} s")
             if "ctx_effective" in c:

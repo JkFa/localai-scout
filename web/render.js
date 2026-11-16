@@ -285,6 +285,12 @@ function confBadge(c) {
   return h("span", { class: "conf conf-" + c.confidence, title: (c.confidence_reasons || []).map((r) => CONF_REASON[r] || r).join("; ") || null }, `${low ? "⚠ " : ""}confiança ${CONF[c.confidence] || c.confidence}`);
 }
 
+// Mesma regra para a célula e para a nota: a linha do início só existe se difere do principal.
+function showsStart(c) {
+  const t = c.tokens_per_s_est, st = c.tokens_per_s_est_start;
+  return typeof t === "number" && typeof st === "number" && Number.isFinite(st) && fmtTps(st) !== fmtTps(t);
+}
+
 function tpsCell(c) {
   const t = c.tokens_per_s_est;
   const reasons = (c.confidence_reasons || []).map((r) => CONF_REASON[r] || r);
@@ -297,7 +303,7 @@ function tpsCell(c) {
   }
   const kind = (c.provenance && c.provenance.tokens_per_s_est) || "estimated";
   const st = c.tokens_per_s_est_start;
-  const showStart = typeof st === "number" && Number.isFinite(st) && fmtTps(st) !== fmtTps(t);
+  const showStart = showsStart(c);
   return h("td", {},
     num(fmtTps(t), kind),
     showStart ? h("div", { class: "muted small start-tps" }, "no início de uma conversa: ", num(fmtTps(st), (c.provenance && c.provenance.tokens_per_s_est_start) || "estimated")) : null,
@@ -349,7 +355,7 @@ export function decodeNote(doc) {
   const n = (v) => (Number.isFinite(v) ? v.toLocaleString("pt-BR") : "?");
   const kv = doc.inputs.intent && doc.inputs.intent.kv_quant;
   let tail = "Conversas mais curtas geram mais rápido.";
-  if (Number.isFinite(d.start_position_tokens) && d.start_position_tokens !== d.position_tokens) {
+  if (Number.isFinite(d.start_position_tokens) && d.start_position_tokens !== d.position_tokens && Array.isArray(doc.candidates) && doc.candidates.some((c) => c && showsStart(c))) {
     const nStart = Math.min(d.answer_tokens, d.window_tokens);
     tail = `É esse número que ordena e escolhe a recomendação. O número menor, embaixo, é o de uma resposta de ${n(nStart)} tokens começando com o contexto vazio (posição média ${n(d.start_position_tokens)}): conversas mais curtas geram mais rápido, mas não conte com ele numa conversa longa.`;
   }
