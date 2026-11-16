@@ -45,6 +45,7 @@
     "kv_bytes": "calculated",
     "n_gpu_layers": "calculated",
     "tokens_per_s_est": "estimated",
+    "tokens_per_s_est_start": "estimated",
     "total_bytes": "calculated",
     "weights_bytes": "catalog"
    },
@@ -58,6 +59,7 @@
    "tier": "confortavel",
    "tokens_per_s_basis": "eta",
    "tokens_per_s_est": 214.19,
+   "tokens_per_s_est_start": 322.27,
    "total_bytes": 1591128736,
    "ttft_s_est": null,
    "weights_bytes": 639446688
@@ -105,6 +107,7 @@
     "kv_bytes": "calculated",
     "n_gpu_layers": "calculated",
     "tokens_per_s_est": "estimated",
+    "tokens_per_s_est_start": "estimated",
     "total_bytes": "calculated",
     "weights_bytes": "catalog"
    },
@@ -118,6 +121,7 @@
    "tier": "confortavel",
    "tokens_per_s_basis": "eta",
    "tokens_per_s_est": 46.79,
+   "tokens_per_s_est_start": 51.65,
    "total_bytes": 5366304480,
    "ttft_s_est": null,
    "weights_bytes": 4280404704
@@ -174,6 +178,7 @@
     "kv_bytes": "calculated",
     "n_gpu_layers": "calculated",
     "tokens_per_s_est": "estimated",
+    "tokens_per_s_est_start": "estimated",
     "total_bytes": "calculated",
     "weights_bytes": "catalog"
    },
@@ -193,6 +198,7 @@
    "tier": "confortavel",
    "tokens_per_s_basis": "eta",
    "tokens_per_s_est": 27.1,
+   "tokens_per_s_est_start": 27.68,
    "total_bytes": 8815326208,
    "ttft_s_est": null,
    "weights_bytes": 8098525184
@@ -249,6 +255,7 @@
     "kv_bytes": "calculated",
     "n_gpu_layers": "calculated",
     "tokens_per_s_est": "estimated",
+    "tokens_per_s_est_start": "estimated",
     "total_bytes": "calculated",
     "weights_bytes": "catalog"
    },
@@ -261,6 +268,7 @@
    "skipped_quants": [],
    "tier": "confortavel",
    "tokens_per_s_est": null,
+   "tokens_per_s_est_start": null,
    "total_bytes": 1064122240,
    "ttft_s_est": null,
    "weights_bytes": 547664768
@@ -308,6 +316,7 @@
     "kv_bytes": "calculated",
     "n_gpu_layers": "calculated",
     "tokens_per_s_est": "estimated",
+    "tokens_per_s_est_start": "estimated",
     "total_bytes": "calculated",
     "weights_bytes": "catalog"
    },
@@ -321,6 +330,7 @@
    "tier": "limite",
    "tokens_per_s_basis": "eta",
    "tokens_per_s_est": 24.36,
+   "tokens_per_s_est_start": 25.61,
    "total_bytes": 9795417888,
    "ttft_s_est": null,
    "weights_bytes": 8709518112
@@ -378,6 +388,7 @@
     "kv_bytes": "calculated",
     "n_gpu_layers": "calculated",
     "tokens_per_s_est": "estimated",
+    "tokens_per_s_est_start": "estimated",
     "total_bytes": "calculated",
     "weights_bytes": "catalog"
    },
@@ -402,6 +413,7 @@
    "tier": "limite",
    "tokens_per_s_basis": "eta",
    "tokens_per_s_est": 18.57,
+   "tokens_per_s_est_start": 20.87,
    "total_bytes": 22610153984,
    "ttft_s_est": null,
    "weights_bytes": 21725580800
@@ -609,6 +621,7 @@
   "decode": {
    "answer_tokens": 1024,
    "position_tokens": 3584,
+   "start_position_tokens": 512,
    "window_tokens": 4096
   },
   "intent": {
@@ -978,7 +991,7 @@
  ],
  "rejected": [],
  "schema_version": 1,
- "scout_version": "0.1.0",
+ "scout_version": "0.2.0",
  "warnings": [
   {
    "code": "swap_not_a_fix",

@@ -35,6 +35,7 @@ export function validate(doc) {
   for (const [i, c] of doc.candidates.entries()) {
     if (!isObj(c) || !isObj(c.model) || typeof c.model.id !== "string" || !isObj(c.quant) || !isInt(c.total_bytes) || !Array.isArray(c.by_pool)) return { error: `Candidato #${i} malformado (model, quant, total_bytes ou by_pool).` };
     if (c.tokens_per_s_est !== null && typeof c.tokens_per_s_est !== "number") return { error: `Candidato #${i}: tokens_per_s_est deveria ser número ou null.` };
+    if (c.tokens_per_s_est_start !== undefined && c.tokens_per_s_est_start !== null && typeof c.tokens_per_s_est_start !== "number") return { error: `Candidato #${i}: tokens_per_s_est_start deveria ser número ou null.` };
   }
   for (const [i, r] of doc.rejected.entries()) if (!isObj(r) || !isObj(r.model) || typeof r.model.id !== "string" || typeof r.message !== "string") return { error: `Rejeitado #${i} malformado.` };
   for (const [i, p] of doc.pools.entries()) if (!isObj(p) || typeof p.id !== "string" || !isInt(p.total_bytes)) return { error: `Pool #${i} malformado.` };
