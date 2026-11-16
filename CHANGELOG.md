@@ -4,6 +4,13 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.2.1] - 2026-11-16
+
+### Adicionado
+
+- Tok/s previsto no início de uma conversa (`tokens_per_s_est_start`), ao lado do número principal no fim da janela: mesma conta, mesmo placement e mesma calibração, só com o KV lido na posição do início. Aparece como linha secundária no markdown e no frontend; o número do fim da janela continua o único que ordena e escolhe a recomendação.
+- `inputs.decode.start_position_tokens` no `feasibility.json`. O campo é opcional: arquivos da 0.2.0 continuam válidos e abrem no modo ARQUIVO.
+
 ## [0.2.0] - 2026-11-16
 
 ### Adicionado
