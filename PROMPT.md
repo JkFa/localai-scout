@@ -181,6 +181,12 @@ no fim de uma janela de 8192 tokens"). Por trecho:
 (No código, bytes_trecho = bytes_camada * n + kv_por_token(p̄) * n // n_layers.
 Batch não multiplica a leitura por token. Contexto maior => tokens/s menor.)
 
+Junto dele vai tokens_per_s_est_start (opção C), com o mesmo candidato,
+placement, trechos e calibração, e o KV lido em p̄ = ⌈min(1024, ctx)/2⌉, que é
+uma resposta de 1024 tokens começando com o contexto vazio. Ele só é exibido,
+nunca ordena nem decide, e é ecoado em inputs.decode.start_position_tokens
+(schemas/decode_range_spec.md).
+
 eta_gpu = 0.75 e eta_cpu = 0.60 são empíricos: ficam em data/tuning.json, nunca
 fixos no código, e são só o chute inicial; o bench nunca os altera (M4). Reporte
 ttft_s_est separado de tokens_per_s_est: prefill é limitado por computação e

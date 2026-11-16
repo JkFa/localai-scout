@@ -127,6 +127,14 @@ def decode_bytes_per_token(weights_active: int, model: dict, prompt_tokens: int,
     return weights_active + kv_read_bytes_per_token(model, 2 * prompt_tokens + gen_tokens, kv_quant) // 2
 
 
+def decode_start_position(ctx: int) -> int:
+    """⌈min(DECODE_ANSWER_TOKENS, ctx)/2⌉: resposta de N = min(1024, ctx) tokens
+    começando com o contexto vazio (decode_range_spec.md, D2). Só exibido."""
+    if ctx < 1:
+        raise ValueError("ctx precisa ser >= 1")
+    return (min(DECODE_ANSWER_TOKENS, ctx) + 1) // 2
+
+
 def decode_position(ctx: int) -> int:
     """Posição média do decode previsto: ctx − N/2 com N = 1024 (resposta que termina
     no limite da janela); ctx < 1024 -> ctx/2, arredondado para cima (mais KV, mais lento)."""

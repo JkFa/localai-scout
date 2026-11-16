@@ -322,3 +322,18 @@ def test_decode_bytes_per_token_is_weights_plus_kv_at_mean_position():
 @pytest.mark.parametrize("ctx,pos", [(8192, 7680), (1024, 512), (32768, 32256), (1000, 500), (999, 500), (1, 1)])
 def test_decode_position(ctx, pos):
     assert E.decode_position(ctx) == pos
+
+
+@pytest.mark.parametrize("ctx,start", [(1, 1), (600, 300), (1023, 512), (1024, 512), (1025, 512), (8192, 512)])
+def test_decode_start_position_fixed_points(ctx, start):
+    assert E.decode_start_position(ctx) == start
+
+
+def test_decode_start_position_invariant_and_errors():
+    assert (E.decode_position(1024), E.decode_position(1025)) == (512, 513)
+    with pytest.raises(ValueError):
+        E.decode_start_position(0)
+    for ctx in range(1, 40000, 7):
+        s, e = E.decode_start_position(ctx), E.decode_position(ctx)
+        assert 1 <= s <= e
+        assert (s == e) == (ctx <= 1024)

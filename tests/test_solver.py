@@ -744,8 +744,115 @@ def test_decode_assumption_is_echoed_and_rendered(systems, catalog):
     from scout.cli import render_markdown
 
     out = run(systems["ddr5_64"], catalog, tasks=("chat",), ctx=8192)
-    assert out["inputs"]["decode"] == {"window_tokens": 8192, "answer_tokens": 1024, "position_tokens": 7680}
+    assert out["inputs"]["decode"] == {"window_tokens": 8192, "answer_tokens": 1024, "position_tokens": 7680,
+                                       "start_position_tokens": 512}
     assert "tokens/s no fim de uma janela de 8192 tokens" in render_markdown(out)
     small = run(systems["ddr5_64"], catalog, tasks=("chat",), ctx=600)
     assert small["inputs"]["decode"]["position_tokens"] == 300
     assert "resposta ocupando a janela inteira" in render_markdown(small)
+
+
+# ---- opção C: tokens/s no início da conversa, só exibido (schemas/decode_range_spec.md)
+
+
+def test_start_of_conversation_dense_cpu_hand_computed(systems, catalog):
+    out = run(systems["ddr5_64"], catalog, tasks=("chat",), ctx=8192)
+    assert_valid("feasibility.schema.json", out)
+    assert out["inputs"]["decode"] == {"window_tokens": 8192, "answer_tokens": 1024, "position_tokens": 7680,
+                                       "start_position_tokens": 512}
+    d = cand(out, "test/dense-7b")
+    # início: KV na posição 512 = 2*32*8*128*512*2 = 67_108_864
+    # (7.65e9 + 67_108_864) / (89.6e9 * 0.6) = 0.143547 s -> 6.9663 tok/s
+    assert d["tokens_per_s_est_start"] == pytest.approx(6.9663, rel=1e-3)
+    # fim (inalterado): (7.65e9 + 1_006_632_960) / (89.6e9 * 0.6) -> 6.2103
+    assert d["tokens_per_s_est"] == pytest.approx(6.2103, rel=1e-3)
+    assert d["provenance"]["tokens_per_s_est_start"] == d["provenance"]["tokens_per_s_est"] == "estimated"
+
+
+@pytest.mark.parametrize("profile", sorted(SYSTEM_PATHS))
+@pytest.mark.parametrize("ctx", [512, 1024, 2048, 8192, 32768])
+@pytest.mark.parametrize("kv", ["f16", "q8_0"])
+def test_start_invariants_on_every_profile(systems, catalog, profile, ctx, kv):
+    out = run(systems[profile], catalog, ctx=ctx, kv=kv)
+    assert_valid("feasibility.schema.json", out)
+    dec = out["inputs"]["decode"]
+    assert 1 <= dec["start_position_tokens"] <= dec["position_tokens"]
+    for c in out["candidates"]:
+        start, end = c["tokens_per_s_est_start"], c["tokens_per_s_est"]
+        assert (start is None) == (end is None)
+        assert c["provenance"]["tokens_per_s_est_start"] == c["provenance"]["tokens_per_s_est"]
+        if end is not None:
+            assert start >= end
+            if ctx <= 1024:
+                assert start == end
+
+
+def _two_model_catalog(catalog):
+    """kvheavy: pesos menores (Q4_K_M 4.41e9) e KV grande (64 cabeças KV, 1_048_576 B/posição);
+    dense-7b: pesos maiores (Q8_0 7.65e9) e KV pequeno (131_072 B/posição)."""
+    cat = deep(catalog)
+    dense = next(m for m in cat["models"] if m["id"] == "test/dense-7b")
+    heavy = deep(dense)
+    heavy.update(id="test/kvheavy-7b", source_url="https://example.invalid/test/kvheavy-7b", n_heads=64,
+                 n_kv_heads=64, quants=[q for q in dense["quants"] if q["name"] == "Q4_K_M"])
+    cat["models"] = [dense, heavy]
+    return cat
+
+
+def test_start_never_orders_nor_picks_primary(systems, catalog):
+    out = run(systems["ddr5_64"], _two_model_catalog(catalog), tasks=("chat",), ctx=8192)
+    assert_valid("feasibility.schema.json", out)
+    h, d = cand(out, "test/kvheavy-7b"), cand(out, "test/dense-7b")
+    # kvheavy, início: (4.41e9 + 2*32*64*128*512*2 = 536_870_912) / 53.76e9 -> 10.8675
+    #          fim:    (4.41e9 + 2*32*64*128*7680*2 = 8_053_063_680) / 53.76e9 -> 4.3135
+    # dense-7b, início 6.9663, fim 6.2103: no início o kvheavy é mais rápido, no fim é o mais lento
+    assert h["tokens_per_s_est_start"] == pytest.approx(10.8675, rel=1e-3)
+    assert h["tokens_per_s_est"] == pytest.approx(4.3135, rel=1e-3)
+    assert h["tokens_per_s_est_start"] > d["tokens_per_s_est_start"] and h["tokens_per_s_est"] < d["tokens_per_s_est"]
+    assert [c["model"]["id"] for c in out["candidates"]] == ["test/dense-7b", "test/kvheavy-7b"]  # ordem do fim
+    assert d["primary_for"] == ["chat"] and h["primary_for"] == []
+
+
+def test_start_hybrid_moe_same_placement_hand_computed(systems, catalog):
+    out = run(systems["rtx3060"], catalog)
+    m = cand(out, "test/moe-30b-a3b")
+    assert m["placement"] == "hybrid" and m["n_gpu_layers"] == 25  # placement escolhido pelo fim
+    # início: KV na posição 512 = 2*48*4*128*512*2 = 50_331_648, dividido pelas camadas de cada trecho
+    # gpu: 25*38_125_000 + 50_331_648*25//48 (26_214_400) = 979_339_400 / (360e9*0.75)
+    # cpu: 23*38_125_000 + 50_331_648*23//48 (24_117_248) = 900_992_248 / (51.2e9*0.6)
+    # t = 0.0036272 + 0.0293292 = 0.0329564 s -> 30.3432 tok/s (fim: 22.0719)
+    assert m["tokens_per_s_est_start"] == pytest.approx(30.3432, rel=1e-3)
+    assert m["tokens_per_s_est_start"] > m["tokens_per_s_est"]
+
+
+def test_start_embeddings_null_with_provenance(systems, catalog):
+    out = run(systems["cpu8"], catalog)
+    e = cand(out, "test/embed-110m")
+    assert e["tokens_per_s_est_start"] is None and "tokens_per_s_est_start" in e["provenance"]
+
+
+def test_start_markdown_line_and_phrase(systems, catalog):
+    from scout.cli import render_markdown
+
+    md = render_markdown(run(systems["ddr5_64"], catalog, ctx=8192))
+    assert "no início de uma conversa: ~6.97 tokens/s" in md
+    assert "Esse é o número que ordena e escolhe a recomendação." in md
+    assert "resposta de 1024 tokens começando com o contexto vazio (posição média 512)" in md
+    emb = next(ln for ln in md.splitlines() if ln.startswith("| [test/embed-110m]"))
+    assert "no início" not in emb
+    md600 = render_markdown(run(systems["ddr5_64"], catalog, ctx=600))
+    assert "no início" not in md600  # posições iguais: um número só (D7)
+
+
+def test_markdown_of_020_shape_keeps_old_sentence(systems, catalog):
+    from scout.cli import render_markdown
+
+    out = run(systems["ddr5_64"], catalog, ctx=8192)
+    del out["inputs"]["decode"]["start_position_tokens"]
+    for c in out["candidates"]:
+        del c["tokens_per_s_est_start"]
+        del c["provenance"]["tokens_per_s_est_start"]
+    assert_valid("feasibility.schema.json", out)
+    md = render_markdown(out)
+    assert "Conversas mais curtas geram mais rápido." in md
+    assert "no início de uma conversa" not in md and "Esse é o número que ordena" not in md

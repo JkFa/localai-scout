@@ -102,6 +102,9 @@ class Attempt:
     bytes_per_token: int = 0      # bytes lidos por token, total
     cal_pools: tuple[str, ...] = ()  # pools com camadas cujo trecho usou calibração
     eta_pools: tuple[str, ...] = ()  # pools com camadas cujo trecho usou bw × eta
+    # Mesmo cálculo com o KV no INÍCIO da conversa (decode_range_spec.md). Só exibido:
+    # _choose, _sort_key, _rank e a preferência de qualidade nunca o leem.
+    tps_start: float | None = None
 
 
 # --------------------------------------------------------------------------
@@ -343,12 +346,14 @@ def _attempts(
     pools: dict[str, Pool],
     allow_hybrid: bool = True,
     kv_read: int = 0,
+    kv_read_start: int = 0,
 ) -> list[Attempt]:
     """Todas as tentativas calculáveis de um (modelo, quant), em ordem de PLACEMENTS.
 
     allow_hybrid=False: quant acima de max_bpw_offload (m7_fixes.md Fa).
     kv_read: bytes de KV lidos por token na posição do decode previsto (todas as
     camadas); cada trecho lê a parte das SUAS camadas (n / n_layers).
+    kv_read_start: o mesmo, na posição do início da conversa (só para tps_start).
     """
     out: list[Attempt] = []
     gpu = pools.get("gpu") or pools.get("unified")
@@ -358,18 +363,18 @@ def _attempts(
     def segments(n_gpu: int) -> list[tuple[Pool | None, int]]:
         return [(p, n) for p, n in ((gpu, n_gpu), (cpu, n_layers - n_gpu)) if n > 0]
 
-    def seg_bytes(n: int) -> int:
+    def seg_bytes(n: int, kv_total: int = kv_read) -> int:
         """Pesos (fração ativa) + KV das n camadas do trecho."""
-        return layer_bytes_read * n + kv_read * n // n_layers
+        return layer_bytes_read * n + kv_total * n // n_layers
 
-    def tps(n_gpu: int) -> float | None:
+    def tps(n_gpu: int, kv_total: int = kv_read) -> float | None:
         # Trecho calibrado: bytes/banda + overhead (bench_spec.md); senão bytes/(bw × eta).
         t = 0.0
         for p, n in segments(n_gpu):
             if p is None:
                 return None
             cal = p.cal or {}
-            seg = E.segment_seconds(seg_bytes(n), p.bw, p.eta,
+            seg = E.segment_seconds(seg_bytes(n, kv_total), p.bw, p.eta,
                                     cal.get("bandwidth_bytes_per_s"), float(cal.get("overhead_s_per_token") or 0.0))
             if seg is None:
                 return None
@@ -381,7 +386,8 @@ def _attempts(
         return Attempt(placement, n_gpu, usages, weights + kv + buf, _worst_tier(usages),
                        tps(n_gpu), used, _missing(usages),
                        seg_bytes(n_layers - n_gpu), seg_bytes(n_layers),
-                       tuple(p.id for p in segs if p.cal), tuple(p.id for p in segs if not p.cal))
+                       tuple(p.id for p in segs if p.cal), tuple(p.id for p in segs if not p.cal),
+                       tps(n_gpu, kv_read_start))
 
     # gpu_full (ou o pool unificado inteiro)
     if gpu is not None:
@@ -495,6 +501,8 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
     kv = E.kv_bytes(n_layers, m["n_kv_heads"], m["head_dim"], ctx, intent.kv_quant, intent.batch)
     # Decode previsto no fim da janela (decisão B): KV lido na posição ctx − 512.
     kv_read = E.kv_read_bytes_per_token(m, E.decode_position(ctx), intent.kv_quant)
+    # Início da conversa (opção C): mesma conta, só a posição do KV muda. Só exibido.
+    kv_read_start = E.kv_read_bytes_per_token(m, E.decode_start_position(ctx), intent.kv_quant)
     buf = E.buffer_bytes(ctx)
 
     skipped: list[dict[str, Any]] = []
@@ -523,11 +531,12 @@ def _evaluate_model(m: dict, intent: Intent, pools: dict[str, Pool], tuning_defa
         # derrubaria a velocidade; vale mais uma quant menor inteira na GPU).
         hybrid_blocked = (max_bpw_offload is not None and bpw > max_bpw_offload
                           and q["format"] == "GGUF" and "gpu" in pools and "cpu" in pools)
-        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools, kv_read=kv_read)
+        attempts = _attempts(q["format"], weights, kv, buf, n_layers, layer_read, pools, kv_read=kv_read,
+                             kv_read_start=kv_read_start)
         if embed_only:
             # Embeddings não fazem decode: tokens/s por banda não se aplica. Sem
             # tokens/s, placement e ordem saem pelo desempate por bytes (F4).
-            attempts = [replace(a, tps=None) for a in attempts]
+            attempts = [replace(a, tps=None, tps_start=None) for a in attempts]
         # R3: o limiar nunca é silencioso. O híbrido é calculado só para saber se
         # o limiar descartou algo que caberia; ele não entra na escolha.
         offload_dropped = False
@@ -639,6 +648,7 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
         "by_pool": list(a.by_pool),
         "tier": a.tier,
         "tokens_per_s_est": _round_tps(a.tps),
+        "tokens_per_s_est_start": _round_tps(a.tps_start),  # só exibido; nunca ordena nem decide
         "ttft_s_est": ttft,  # A17: null salvo prefill calibrado do próprio modelo
         "confidence": confidence,
         "confidence_reasons": sorted(reasons),
@@ -653,6 +663,8 @@ def _candidate(ref: dict, m: dict, q: dict, a: Attempt, weights: int, kv: int, b
             "total_bytes": _worst(w_prov, "calculated"),
             "n_gpu_layers": hw_prov if a.placement == "hybrid" else "calculated",
             "tokens_per_s_est": "calculated" if all_calibrated else "estimated",
+            # mesmas entradas, só a posição (uma definição) muda: mesma proveniência (D4)
+            "tokens_per_s_est_start": "calculated" if all_calibrated else "estimated",
             **({"ttft_s_est": "calculated"} if ttft is not None else {}),
         },
         **({"tokens_per_s_basis": "calibration" if all_calibrated
@@ -945,6 +957,8 @@ def solve(system: dict, catalog: dict, intent: Intent, tuning: dict,
                 "window_tokens": intent.ctx,
                 "answer_tokens": E.DECODE_ANSWER_TOKENS,
                 "position_tokens": E.decode_position(intent.ctx),
+                # opção C: início da conversa (contexto vazio), só exibido
+                "start_position_tokens": E.decode_start_position(intent.ctx),
             },
             "calibration": cal_echo,
             **({"power": power_echo} if cal_echo["status"] in ("used", "discarded") else {}),

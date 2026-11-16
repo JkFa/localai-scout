@@ -56,11 +56,11 @@ def _parse_tasks(arg: str | None, catalog: dict) -> tuple[str, ...]:
     return tuple(t for t in TASKS if t in wanted)
 
 
-def _fmt_tps(x: float | None, prov: dict | None = None) -> str:
+def _fmt_tps(x: float | None, prov: dict | None = None, field: str = "tokens_per_s_est") -> str:
     """tokens/s com ~ salvo quando vem de calibração medida (proveniência calculated)."""
     if x is None:
         return "?"
-    return ("" if (prov or {}).get("tokens_per_s_est") == "calculated" else "~") + f"{x:.2f}"
+    return ("" if (prov or {}).get(field) == "calculated" else "~") + f"{x:.2f}"
 
 
 def _est(text: str, prov: dict, field: str) -> str:
@@ -107,9 +107,17 @@ def render_markdown(f: dict) -> str:
         if dec:
             answer = (f"resposta de {dec['answer_tokens']} tokens terminando no limite do contexto"
                       if dec["window_tokens"] >= dec["answer_tokens"] else "resposta ocupando a janela inteira")
+            # Posições iguais (ctx <= 1024): nenhuma nota de início sai (D7), então a frase antiga fica.
+            if "start_position_tokens" in dec and dec["start_position_tokens"] != dec["position_tokens"]:
+                n_start = min(dec["answer_tokens"], dec["window_tokens"])
+                tail = ("Esse é o número que ordena e escolhe a recomendação. Na nota, \"no início de uma "
+                        f"conversa\" é o de uma resposta de {n_start} tokens começando com o contexto vazio "
+                        f"(posição média {dec['start_position_tokens']}); conversas mais curtas geram mais "
+                        "rápido, mas não conte com ele numa conversa longa.")
+            else:
+                tail = "Conversas mais curtas geram mais rápido."
             lines += [f"tokens/s no fim de uma janela de {dec['window_tokens']} tokens: {answer}, KV "
-                      f"{intent['kv_quant']} lido até a posição média {dec['position_tokens']}. "
-                      "Conversas mais curtas geram mais rápido.", ""]
+                      f"{intent['kv_quant']} lido até a posição média {dec['position_tokens']}. " + tail, ""]
         lines += [
             "| modelo | quant | placement | camadas na GPU | memória total | tier | tokens/s | confiança | nota |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -127,6 +135,12 @@ def render_markdown(f: dict) -> str:
                 notes.append("tokens/s pela calibração desta máquina (scout bench)")
             elif c.get("tokens_per_s_basis") == "mixed":
                 notes.append("tokens/s: um trecho calibrado, outro por eta")
+            start = c.get("tokens_per_s_est_start")
+            if start is not None and "decode_not_applicable" not in c["confidence_reasons"]:
+                s_txt = _fmt_tps(start, c["provenance"], "tokens_per_s_est_start")
+                # D7: some quando o texto formatado coincide com o do principal
+                if s_txt != _fmt_tps(c["tokens_per_s_est"], c["provenance"]):
+                    notes.append("no início de uma conversa: " + _warn(s_txt, c) + " tokens/s")
             if c["ttft_s_est"] is not None:
                 notes.append(f"tempo até o primeiro token: {c['ttft_s_est']:.2f} s")
             if "ctx_effective" in c:
